@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ui-theme"
+version = "0.1.0"
+description = "Colour schemes, pywal, colour depth and animated effects for any UI backend"
+authors = [{name = "Tristan Simas", email = "tristan.simas@mail.mcgill.ca"}]
+license = {text = "MIT"}
+requires-python = ">=3.12"
+dependencies = [
+    "metaclass-registry>=0.2.1",
+    "terminaltexteffects==0.15.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ui_theme"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
