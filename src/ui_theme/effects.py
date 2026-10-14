@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, ColourScheme, PrimaryColour, SecondaryColour, ThemeColour,
+    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, PrimaryColour,
+    SecondaryColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -197,6 +198,10 @@ ACTIVITY_SWEEP = GradientSweep((PrimaryColour, AccentColour, SecondaryColour),
 
 # A message that has just arrived: its colour fades from the accent to its own.
 NEW_MESSAGE = Fade(AccentColour, AccentColour, duration=0.4, frames_per_second=30)
+
+# Text that has just arrived on a live tail: it rises out of the background
+# into its own colours (a backend blends each run's colour, not one colour).
+NEW_TEXT = Fade(BackgroundColour, ForegroundColour, duration=0.35, frames_per_second=30)
 
 # The current tab's underline when a tab is chosen.
 TAB_WIPE = Wipe(AccentColour, width=0.35, duration=0.25, frames_per_second=60)
