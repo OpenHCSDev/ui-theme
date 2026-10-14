@@ -42,14 +42,15 @@ def test_the_package_imports_no_ui_toolkit_and_nothing_of_comms():
     assert result.stdout.strip() == ""
 
 
-def test_wal_file_decodes_to_a_scheme_from_ansi_slots(tmp_path):
+def test_wal_file_preserves_accents_and_uses_the_error_role_red(tmp_path):
     path = tmp_path / WalFile.NAME
     path.write_text(json.dumps(WAL))
     scheme = WalFile.read(path).scheme
     assert scheme.name == "wal" and scheme.dark and not scheme.from_terminal
     assert scheme.rgb(BackgroundColour) == Rgb(0x0b, 0x0b, 0x0d)
     assert (scheme.rgb(PrimaryColour), scheme.rgb(SecondaryColour), scheme.rgb(ErrorColour)) == (
-        Rgb(4, 4, 4), Rgb(6, 6, 6), Rgb(1, 1, 1))
+        Rgb(4, 4, 4), Rgb(6, 6, 6), Rgb(0xe0, 0x6c, 0x75))
+    assert scheme.terminal.ansi[1] == Rgb(1, 1, 1)
     assert scheme.terminal.ansi[15] == Rgb(15, 15, 15)
 
 

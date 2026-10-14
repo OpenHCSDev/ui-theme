@@ -79,7 +79,10 @@ class WarningColour(CoreColour):
 
 
 class ErrorColour(CoreColour):
+    """Failures stay recognisably red in monochromatic wallpaper palettes."""
+
     name = "error"
+    palette_colour: ClassVar[Rgb] = Rgb.parse("#e06c75")
 
 
 class SurfaceColour(LayerColour):
@@ -150,10 +153,10 @@ class ColourScheme:
 
 
 def scheme_of_palette(name: str, palette: TerminalPalette) -> ColourScheme:
-    """A palette as a true-colour scheme: each colour is the ANSI slot ANSI themes use."""
+    """Wallpaper accents as true colour, with the error role's own failure red."""
     slot = palette.ansi
     return ColourScheme(name, palette.dark, {
         ForegroundColour: palette.foreground, BackgroundColour: palette.background,
         PrimaryColour: slot[4], SecondaryColour: slot[6], AccentColour: slot[5],
-        SuccessColour: slot[2], WarningColour: slot[3], ErrorColour: slot[1],
+        SuccessColour: slot[2], WarningColour: slot[3], ErrorColour: ErrorColour.palette_colour,
     }, palette)
