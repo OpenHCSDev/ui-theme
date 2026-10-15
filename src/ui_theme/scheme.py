@@ -8,7 +8,7 @@ does not, each backend lays out its own surfaces.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar
@@ -34,7 +34,13 @@ class ThemeColour(metaclass=AutoRegisterMeta):
     @classmethod
     def rgb(cls, scheme: ColourScheme) -> Rgb:
         """This colour in 24 bits under `scheme`; a terminal colour is read from its palette."""
-        return scheme.colours[cls].rgb(scheme.terminal, background=cls.background)
+        return cls.resolve_rgb(lambda member: scheme.colours[member].rgb(
+            scheme.terminal, background=member.background))
+
+    @classmethod
+    def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
+        """Resolve this declaration against the caller's already decoded palette."""
+        return read(cls)
 
 
 class CoreColour(ThemeColour):
@@ -109,8 +115,8 @@ class MutedColour(ThemeColour):
     amount: ClassVar[float] = 0.6
 
     @classmethod
-    def rgb(cls, scheme: ColourScheme) -> Rgb:
-        return BackgroundColour.rgb(scheme).blend(ForegroundColour.rgb(scheme), cls.amount)
+    def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
+        return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), cls.amount)
 
 
 class TextStyle(Enum):
