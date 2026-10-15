@@ -9,6 +9,7 @@ samples it into cells, Qt into a painter, a web view into CSS.
 Frames:
 
 - `Gradient`: theme colours repeating along a line, shifted by a fraction;
+- `Ribbon`: a finite gradient with tapered, fractional-height ink;
 - `Mix`: one colour part of the way from one theme colour to another;
 - `Band`: a theme colour over a span of a line;
 - `TextFrame`: lines of text, each character in its own colour.
@@ -23,8 +24,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, MutedColour,
-    PrimaryColour, SecondaryColour, ThemeColour,
+    AccentColour, ActivityCoreColour, ActivityShoulderColour, ActivityTailColour,
+    BackgroundColour, ColourScheme, ForegroundColour, MutedColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -282,7 +283,8 @@ class PlayedText(Effect[TextFrame]):
 
 # The busy indicator while an agent works.
 ACTIVITY_SWEEP = BreathingSweep(
-    (PrimaryColour, SecondaryColour, ForegroundColour, AccentColour, PrimaryColour),
+    (ActivityTailColour, ActivityShoulderColour, ActivityCoreColour,
+     ActivityShoulderColour, ActivityTailColour),
     period=1.8, breathing_period=2.7, minimum_width=0.12, maximum_width=0.55,
     minimum_thickness=0.25, maximum_thickness=1.0, frames_per_second=20,
 )
