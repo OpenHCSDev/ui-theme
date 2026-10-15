@@ -18,12 +18,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from math import cos, tau
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, PrimaryColour,
-    SecondaryColour, ThemeColour,
+    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -74,16 +74,19 @@ class Mix(Frame):
 
 @dataclass(frozen=True)
 class Band(Frame):
-    """`colour` over the span `start`–`end` (fractions of the line); nothing elsewhere."""
+    """`colour` over `start`–`end`; optionally a base mix under the whole line."""
 
     colour: type[ThemeColour]
     start: float
     end: float
+    base: Mix | None = None
 
     def covers(self, position: float) -> bool:
         return self.start <= position < self.end
 
     def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> Any:
+        if self.base is not None:
+            target = self.base.paint(backend, target)
         return backend.paint_band(self, target)
 
 
@@ -132,6 +135,31 @@ class GradientSweep(Effect[Gradient]):
     @property
     def final(self) -> Gradient:
         return Gradient(self.stops, 0.0)
+
+
+@dataclass(frozen=True)
+class BreathingSweep(Effect[Band]):
+    """An indeterminate band travels and breathes; its width is never progress."""
+
+    colour: type[ThemeColour]
+    base: Mix
+    period: float
+    breathing_period: float
+    minimum_width: float
+    maximum_width: float
+    frames_per_second: float
+    duration: float | None = None
+
+    def frame(self, elapsed: float) -> Band:
+        breath = (1 - cos(tau * elapsed / self.breathing_period)) / 2
+        width = self.minimum_width + (self.maximum_width - self.minimum_width) * breath
+        lead = ((elapsed / self.period) % 1) * (1 + width)
+        return Band(self.colour, lead - width, lead, self.base)
+
+    @property
+    def final(self) -> Band:
+        width = (self.minimum_width + self.maximum_width) / 2
+        return Band(self.colour, (1 - width) / 2, (1 + width) / 2, self.base)
 
 
 @dataclass(frozen=True)
@@ -193,8 +221,11 @@ class PlayedText(Effect[TextFrame]):
 
 
 # The busy indicator while an agent works.
-ACTIVITY_SWEEP = GradientSweep((PrimaryColour, AccentColour, SecondaryColour),
-                               period=1.0, frames_per_second=15)
+ACTIVITY_SWEEP = BreathingSweep(
+    ForegroundColour, Mix(BackgroundColour, AccentColour, 0.35),
+    period=1.8, breathing_period=2.7, minimum_width=0.08, maximum_width=0.4,
+    frames_per_second=20,
+)
 
 # A message that has just arrived: its colour fades from the accent to its own.
 NEW_MESSAGE = Fade(AccentColour, AccentColour, duration=0.4, frames_per_second=30)
