@@ -132,14 +132,14 @@ class ActivityColour(ThemeColour):
 
 class ActivityTailColour(ActivityColour):
     name = "activity-tail"
-    dark = Rgb.parse("#8b65f2")
-    light = Rgb.parse("#5134a4")
+    dark = Rgb.parse("#526b8c")
+    light = Rgb.parse("#2e4568")
 
 
 class ActivityShoulderColour(ActivityColour):
     name = "activity-shoulder"
-    dark = Rgb.parse("#28d7e8")
-    light = Rgb.parse("#00627a")
+    dark = Rgb.parse("#88b9d4")
+    light = Rgb.parse("#3e6685")
 
 
 class ActivityCoreColour(ActivityColour):

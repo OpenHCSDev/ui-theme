@@ -18,8 +18,8 @@ Frames:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, replace
-from math import cos, pi, sin, tau
+from dataclasses import dataclass
+from math import cos, tau
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
@@ -76,8 +76,13 @@ class Ribbon(Gradient):
         if not 0 < place < 1:
             return (*self.at(0), 0.0)
         # Sample the finite palette, without wrapping its last stop to its first.
-        colour = self.at(place * (len(self.stops) - 1) / len(self.stops))
-        return (*colour, self.thickness * sin(pi * place) ** 0.7)
+        start, end, amount = self.at(place * (len(self.stops) - 1) / len(self.stops))
+        # Ease between colour stops; taper just the ends, not the whole line
+        # into a dome. The bright body keeps the declared thin ink height.
+        amount = amount * amount * (3 - 2 * amount)
+        edge = min(1.0, 8 * place, 8 * (1 - place))
+        edge = edge * edge * (3 - 2 * edge)
+        return start, end, amount, self.thickness * edge
 
 
 @dataclass(frozen=True)
@@ -196,12 +201,6 @@ class BreathingSweep(Effect[Ribbon]):
         thickness = (self.minimum_thickness + self.maximum_thickness) / 2
         return Ribbon(self.stops, 0.0, (1 - width) / 2, (1 + width) / 2, thickness)
 
-    def scaled(self, thickness: float) -> BreathingSweep:
-        """Fit the same shape and motion to a frontend's declared maximum ink height."""
-        return replace(self, minimum_thickness=self.minimum_thickness * thickness,
-                       maximum_thickness=self.maximum_thickness * thickness)
-
-
 @dataclass(frozen=True)
 class Pulse(Effect[Mix]):
     """A colour mix breathes between declared bounds, without a frame counter."""
@@ -305,8 +304,8 @@ SPINNER = LoopingText(
 ACTIVITY_SWEEP = BreathingSweep(
     (ActivityTailColour, ActivityShoulderColour, ActivityCoreColour,
      ActivityShoulderColour, ActivityTailColour),
-    period=1.8, breathing_period=2.7, minimum_width=0.12, maximum_width=0.55,
-    minimum_thickness=0.25, maximum_thickness=1.0, frames_per_second=20,
+    period=3.2, breathing_period=2.7, minimum_width=0.06, maximum_width=0.22,
+    minimum_thickness=0.125, maximum_thickness=0.25, frames_per_second=20,
 )
 
 # Goal standby is a quiet marker, not a claim of active work.
