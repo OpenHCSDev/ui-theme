@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, ThemeColour,
+    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, MutedColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -119,6 +119,18 @@ class Effect(ABC, Generic[FrameT]):
     def finished(self, elapsed: float) -> bool:
         return self.duration is not None and elapsed >= self.duration
 
+    @staticmethod
+    def phase(elapsed: float, period: float) -> float:
+        return (elapsed / period) % 1.0
+
+    @classmethod
+    def oscillation(cls, elapsed: float, period: float) -> float:
+        return (1 - cos(tau * cls.phase(elapsed, period))) / 2
+
+    @staticmethod
+    def progress(elapsed: float, duration: float) -> float:
+        return min(1.0, max(0.0, elapsed / duration))
+
 
 @dataclass(frozen=True)
 class GradientSweep(Effect[Gradient]):
@@ -130,7 +142,7 @@ class GradientSweep(Effect[Gradient]):
     duration: float | None = None
 
     def frame(self, elapsed: float) -> Gradient:
-        return Gradient(self.stops, (elapsed / self.period) % 1.0)
+        return Gradient(self.stops, self.phase(elapsed, self.period))
 
     @property
     def final(self) -> Gradient:
@@ -151,15 +163,36 @@ class BreathingSweep(Effect[Band]):
     duration: float | None = None
 
     def frame(self, elapsed: float) -> Band:
-        breath = (1 - cos(tau * elapsed / self.breathing_period)) / 2
+        breath = self.oscillation(elapsed, self.breathing_period)
         width = self.minimum_width + (self.maximum_width - self.minimum_width) * breath
-        lead = ((elapsed / self.period) % 1) * (1 + width)
+        lead = self.phase(elapsed, self.period) * (1 + width)
         return Band(self.colour, lead - width, lead, self.base)
 
     @property
     def final(self) -> Band:
         width = (self.minimum_width + self.maximum_width) / 2
         return Band(self.colour, (1 - width) / 2, (1 + width) / 2, self.base)
+
+
+@dataclass(frozen=True)
+class Pulse(Effect[Mix]):
+    """A colour mix breathes between declared bounds, without a frame counter."""
+
+    start: type[ThemeColour]
+    end: type[ThemeColour]
+    minimum: float
+    maximum: float
+    period: float
+    frames_per_second: float
+    duration: float | None = None
+
+    def frame(self, elapsed: float) -> Mix:
+        return Mix(self.start, self.end,
+                   self.maximum - (self.maximum - self.minimum) * self.oscillation(elapsed, self.period))
+
+    @property
+    def final(self) -> Mix:
+        return Mix(self.start, self.end, self.maximum)
 
 
 @dataclass(frozen=True)
@@ -172,7 +205,7 @@ class Fade(Effect[Mix]):
     frames_per_second: float
 
     def frame(self, elapsed: float) -> Mix:
-        progress = min(1.0, max(0.0, elapsed / self.duration))
+        progress = self.progress(elapsed, self.duration)
         return Mix(self.start, self.end, 1 - (1 - progress) ** 2)
 
     @property
@@ -193,7 +226,7 @@ class Wipe(Effect[Band]):
     frames_per_second: float
 
     def frame(self, elapsed: float) -> Band:
-        lead = min(1.0, max(0.0, elapsed / self.duration)) * (1 + self.width)
+        lead = self.progress(elapsed, self.duration) * (1 + self.width)
         return Band(self.colour, lead - self.width, lead)
 
     @property
@@ -225,6 +258,12 @@ ACTIVITY_SWEEP = BreathingSweep(
     ForegroundColour, Mix(BackgroundColour, AccentColour, 0.35),
     period=1.8, breathing_period=2.7, minimum_width=0.08, maximum_width=0.4,
     frames_per_second=20,
+)
+
+# Goal standby is a quiet marker, not a claim of active work.
+STANDBY_PULSE = Pulse(
+    BackgroundColour, MutedColour, minimum=0.45, maximum=1.0,
+    period=1.6, frames_per_second=20,
 )
 
 # A message that has just arrived: its colour fades from the accent to its own.
