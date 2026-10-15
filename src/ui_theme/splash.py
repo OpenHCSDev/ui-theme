@@ -35,6 +35,8 @@ class TextEffect:
         module = import_module(f"terminaltexteffects.effects.effect_{self.effect}")
         effect = module.get_effect_resources()[1](self.text)
         effect.terminal_config.frame_rate = 0
+        # Preparation follows its input canvas, never a worker's terminal size.
+        effect.terminal_config.ignore_terminal_dimensions = True
         effect.effect_config.final_gradient_stops = tuple(
             Color(scheme.rgb(stop).hex[1:]) for stop in self.stops)
         effect.effect_config.final_gradient_direction = Gradient.Direction.HORIZONTAL
