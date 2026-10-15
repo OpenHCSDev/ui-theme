@@ -270,16 +270,36 @@ class PlayedText(Effect[TextFrame]):
     frames_per_second: float
 
     @property
-    def duration(self) -> float:  # type: ignore[override]
+    def duration(self) -> float | None:  # type: ignore[override]
         return len(self.frames) / self.frames_per_second
 
     def frame(self, elapsed: float) -> TextFrame:
-        return self.frames[min(len(self.frames) - 1, max(0, int(elapsed * self.frames_per_second)))]
+        return self.frames[self._frame_index(max(0, int(elapsed * self.frames_per_second)))]
+
+    def _frame_index(self, index: int) -> int:
+        return min(len(self.frames) - 1, index)
 
     @property
     def final(self) -> TextFrame:
         return self.frames[-1]
 
+
+class LoopingText(PlayedText):
+    """The same text playback, wrapping instead of finishing; final stays static when disabled."""
+
+    @property
+    def duration(self) -> None:
+        return None
+
+    def _frame_index(self, index: int) -> int:
+        return index % len(self.frames)
+
+
+# Single-cell activity ink; None inherits the frontend label's existing style.
+SPINNER = LoopingText(
+    tuple(TextFrame((((glyph, None),),)) for glyph in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
+    frames_per_second=10,
+)
 
 # The busy indicator while an agent works.
 ACTIVITY_SWEEP = BreathingSweep(
