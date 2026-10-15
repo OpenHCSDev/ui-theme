@@ -119,6 +119,35 @@ class MutedColour(ThemeColour):
         return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), cls.amount)
 
 
+class ActivityColour(ThemeColour):
+    """Decorative ribbon ink stays colourful even in monochromatic text palettes."""
+
+    dark: ClassVar[Rgb]
+    light: ClassVar[Rgb]
+
+    @classmethod
+    def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
+        return cls.dark.blend(cls.light, read(BackgroundColour).brightness)
+
+
+class ActivityTailColour(ActivityColour):
+    name = "activity-tail"
+    dark = Rgb.parse("#8b65f2")
+    light = Rgb.parse("#5134a4")
+
+
+class ActivityShoulderColour(ActivityColour):
+    name = "activity-shoulder"
+    dark = Rgb.parse("#28d7e8")
+    light = Rgb.parse("#00627a")
+
+
+class ActivityCoreColour(ActivityColour):
+    name = "activity-core"
+    dark = Rgb.parse("#f0fbff")
+    light = Rgb.parse("#172944")
+
+
 class TextStyle(Enum):
     """How an element's text is emphasised."""
 

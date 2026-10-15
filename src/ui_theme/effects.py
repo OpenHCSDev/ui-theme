@@ -9,6 +9,7 @@ samples it into cells, Qt into a painter, a web view into CSS.
 Frames:
 
 - `Gradient`: theme colours repeating along a line, shifted by a fraction;
+- `Ribbon`: a finite gradient with tapered, fractional-height ink;
 - `Mix`: one colour part of the way from one theme colour to another;
 - `Band`: a theme colour over a span of a line;
 - `TextFrame`: lines of text, each character in its own colour.
@@ -17,13 +18,14 @@ Frames:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from math import cos, tau
+from dataclasses import dataclass, replace
+from math import cos, pi, sin, tau
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, MutedColour, ThemeColour,
+    AccentColour, ActivityCoreColour, ActivityShoulderColour, ActivityTailColour,
+    BackgroundColour, ColourScheme, ForegroundColour, MutedColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -53,8 +55,29 @@ class Gradient(Frame):
         index = int(place) % len(self.stops)
         return self.stops[index], self.stops[(index + 1) % len(self.stops)], place - int(place)
 
+    def sample(self, position: float) -> tuple[type[ThemeColour], type[ThemeColour], float, float]:
+        """Colour stops, blend and fraction of the target's ink height at this point."""
+        return (*self.at(position), 1.0)
+
     def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> Any:
         return backend.paint_gradient(self, target)
+
+
+@dataclass(frozen=True)
+class Ribbon(Gradient):
+    """A finite gradient with a bright core and tapered, fractional-height tails."""
+
+    start: float
+    end: float
+    thickness: float
+
+    def sample(self, position: float) -> tuple[type[ThemeColour], type[ThemeColour], float, float]:
+        place = (position - self.start) / (self.end - self.start)
+        if not 0 < place < 1:
+            return (*self.at(0), 0.0)
+        # Sample the finite palette, without wrapping its last stop to its first.
+        colour = self.at(place * (len(self.stops) - 1) / len(self.stops))
+        return (*colour, self.thickness * sin(pi * place) ** 0.7)
 
 
 @dataclass(frozen=True)
@@ -74,19 +97,16 @@ class Mix(Frame):
 
 @dataclass(frozen=True)
 class Band(Frame):
-    """`colour` over `start`–`end`; optionally a base mix under the whole line."""
+    """`colour` over `start`–`end`."""
 
     colour: type[ThemeColour]
     start: float
     end: float
-    base: Mix | None = None
 
     def covers(self, position: float) -> bool:
         return self.start <= position < self.end
 
     def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> Any:
-        if self.base is not None:
-            target = self.base.paint(backend, target)
         return backend.paint_band(self, target)
 
 
@@ -150,28 +170,36 @@ class GradientSweep(Effect[Gradient]):
 
 
 @dataclass(frozen=True)
-class BreathingSweep(Effect[Band]):
-    """An indeterminate band travels and breathes; its width is never progress."""
+class BreathingSweep(Effect[Ribbon]):
+    """A tapered gradient travels, shrinks and expands; its size is never progress."""
 
-    colour: type[ThemeColour]
-    base: Mix
+    stops: tuple[type[ThemeColour], ...]
     period: float
     breathing_period: float
     minimum_width: float
     maximum_width: float
+    minimum_thickness: float
+    maximum_thickness: float
     frames_per_second: float
     duration: float | None = None
 
-    def frame(self, elapsed: float) -> Band:
+    def frame(self, elapsed: float) -> Ribbon:
         breath = self.oscillation(elapsed, self.breathing_period)
         width = self.minimum_width + (self.maximum_width - self.minimum_width) * breath
+        thickness = self.minimum_thickness + (self.maximum_thickness - self.minimum_thickness) * breath
         lead = self.phase(elapsed, self.period) * (1 + width)
-        return Band(self.colour, lead - width, lead, self.base)
+        return Ribbon(self.stops, 0.0, lead - width, lead, thickness)
 
     @property
-    def final(self) -> Band:
+    def final(self) -> Ribbon:
         width = (self.minimum_width + self.maximum_width) / 2
-        return Band(self.colour, (1 - width) / 2, (1 + width) / 2, self.base)
+        thickness = (self.minimum_thickness + self.maximum_thickness) / 2
+        return Ribbon(self.stops, 0.0, (1 - width) / 2, (1 + width) / 2, thickness)
+
+    def scaled(self, thickness: float) -> BreathingSweep:
+        """Fit the same shape and motion to a frontend's declared maximum ink height."""
+        return replace(self, minimum_thickness=self.minimum_thickness * thickness,
+                       maximum_thickness=self.maximum_thickness * thickness)
 
 
 @dataclass(frozen=True)
@@ -255,9 +283,10 @@ class PlayedText(Effect[TextFrame]):
 
 # The busy indicator while an agent works.
 ACTIVITY_SWEEP = BreathingSweep(
-    ForegroundColour, Mix(BackgroundColour, AccentColour, 0.35),
-    period=1.8, breathing_period=2.7, minimum_width=0.08, maximum_width=0.4,
-    frames_per_second=20,
+    (ActivityTailColour, ActivityShoulderColour, ActivityCoreColour,
+     ActivityShoulderColour, ActivityTailColour),
+    period=1.8, breathing_period=2.7, minimum_width=0.12, maximum_width=0.55,
+    minimum_thickness=0.25, maximum_thickness=1.0, frames_per_second=20,
 )
 
 # Goal standby is a quiet marker, not a claim of active work.
