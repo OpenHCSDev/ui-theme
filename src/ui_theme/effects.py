@@ -9,6 +9,7 @@ samples it into cells, Qt into a painter, a web view into CSS.
 Frames:
 
 - `Gradient`: theme colours repeating along a line, shifted by a fraction;
+- `Ribbon`: a finite gradient with tapered, fractional-height ink;
 - `Mix`: one colour part of the way from one theme colour to another;
 - `Band`: a theme colour over a span of a line;
 - `TextFrame`: lines of text, each character in its own colour.
@@ -18,12 +19,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from math import cos, tau
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, BackgroundColour, ColourScheme, ForegroundColour, PrimaryColour,
-    SecondaryColour, ThemeColour,
+    AccentColour, PrimaryColour,
+    BackgroundColour, ColourScheme, ForegroundColour, MutedColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -53,8 +55,34 @@ class Gradient(Frame):
         index = int(place) % len(self.stops)
         return self.stops[index], self.stops[(index + 1) % len(self.stops)], place - int(place)
 
+    def sample(self, position: float) -> tuple[type[ThemeColour], type[ThemeColour], float, float]:
+        """Colour stops, blend and fraction of the target's ink height at this point."""
+        return (*self.at(position), 1.0)
+
     def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> Any:
         return backend.paint_gradient(self, target)
+
+
+@dataclass(frozen=True)
+class Ribbon(Gradient):
+    """A finite gradient with a bright core and tapered, fractional-height tails."""
+
+    start: float
+    end: float
+    thickness: float
+
+    def sample(self, position: float) -> tuple[type[ThemeColour], type[ThemeColour], float, float]:
+        place = (position - self.start) / (self.end - self.start)
+        if not 0 < place < 1:
+            return (*self.at(0), 0.0)
+        # Sample the finite palette, without wrapping its last stop to its first.
+        start, end, amount = self.at(place * (len(self.stops) - 1) / len(self.stops))
+        # Ease between colour stops; taper just the ends, not the whole line
+        # into a dome. The bright body keeps the declared thin ink height.
+        amount = amount * amount * (3 - 2 * amount)
+        edge = min(1.0, 8 * place, 8 * (1 - place))
+        edge = edge * edge * (3 - 2 * edge)
+        return start, end, amount, self.thickness * edge
 
 
 @dataclass(frozen=True)
@@ -74,7 +102,7 @@ class Mix(Frame):
 
 @dataclass(frozen=True)
 class Band(Frame):
-    """`colour` over the span `start`–`end` (fractions of the line); nothing elsewhere."""
+    """`colour` over `start`–`end`."""
 
     colour: type[ThemeColour]
     start: float
@@ -116,6 +144,18 @@ class Effect(ABC, Generic[FrameT]):
     def finished(self, elapsed: float) -> bool:
         return self.duration is not None and elapsed >= self.duration
 
+    @staticmethod
+    def phase(elapsed: float, period: float) -> float:
+        return (elapsed / period) % 1.0
+
+    @classmethod
+    def oscillation(cls, elapsed: float, period: float) -> float:
+        return (1 - cos(tau * cls.phase(elapsed, period))) / 2
+
+    @staticmethod
+    def progress(elapsed: float, duration: float) -> float:
+        return min(1.0, max(0.0, elapsed / duration))
+
 
 @dataclass(frozen=True)
 class GradientSweep(Effect[Gradient]):
@@ -127,11 +167,59 @@ class GradientSweep(Effect[Gradient]):
     duration: float | None = None
 
     def frame(self, elapsed: float) -> Gradient:
-        return Gradient(self.stops, (elapsed / self.period) % 1.0)
+        return Gradient(self.stops, self.phase(elapsed, self.period))
 
     @property
     def final(self) -> Gradient:
         return Gradient(self.stops, 0.0)
+
+
+@dataclass(frozen=True)
+class BreathingSweep(Effect[Ribbon]):
+    """A tapered gradient travels, shrinks and expands; its size is never progress."""
+
+    stops: tuple[type[ThemeColour], ...]
+    period: float
+    breathing_period: float
+    minimum_width: float
+    maximum_width: float
+    minimum_thickness: float
+    maximum_thickness: float
+    frames_per_second: float
+    duration: float | None = None
+
+    def frame(self, elapsed: float) -> Ribbon:
+        breath = self.oscillation(elapsed, self.breathing_period)
+        width = self.minimum_width + (self.maximum_width - self.minimum_width) * breath
+        thickness = self.minimum_thickness + (self.maximum_thickness - self.minimum_thickness) * breath
+        lead = self.phase(elapsed, self.period) * (1 + width)
+        return Ribbon(self.stops, 0.0, lead - width, lead, thickness)
+
+    @property
+    def final(self) -> Ribbon:
+        width = (self.minimum_width + self.maximum_width) / 2
+        thickness = (self.minimum_thickness + self.maximum_thickness) / 2
+        return Ribbon(self.stops, 0.0, (1 - width) / 2, (1 + width) / 2, thickness)
+
+@dataclass(frozen=True)
+class Pulse(Effect[Mix]):
+    """A colour mix breathes between declared bounds, without a frame counter."""
+
+    start: type[ThemeColour]
+    end: type[ThemeColour]
+    minimum: float
+    maximum: float
+    period: float
+    frames_per_second: float
+    duration: float | None = None
+
+    def frame(self, elapsed: float) -> Mix:
+        return Mix(self.start, self.end,
+                   self.maximum - (self.maximum - self.minimum) * self.oscillation(elapsed, self.period))
+
+    @property
+    def final(self) -> Mix:
+        return Mix(self.start, self.end, self.maximum)
 
 
 @dataclass(frozen=True)
@@ -144,7 +232,7 @@ class Fade(Effect[Mix]):
     frames_per_second: float
 
     def frame(self, elapsed: float) -> Mix:
-        progress = min(1.0, max(0.0, elapsed / self.duration))
+        progress = self.progress(elapsed, self.duration)
         return Mix(self.start, self.end, 1 - (1 - progress) ** 2)
 
     @property
@@ -165,7 +253,7 @@ class Wipe(Effect[Band]):
     frames_per_second: float
 
     def frame(self, elapsed: float) -> Band:
-        lead = min(1.0, max(0.0, elapsed / self.duration)) * (1 + self.width)
+        lead = self.progress(elapsed, self.duration) * (1 + self.width)
         return Band(self.colour, lead - self.width, lead)
 
     @property
@@ -181,20 +269,49 @@ class PlayedText(Effect[TextFrame]):
     frames_per_second: float
 
     @property
-    def duration(self) -> float:  # type: ignore[override]
+    def duration(self) -> float | None:  # type: ignore[override]
         return len(self.frames) / self.frames_per_second
 
     def frame(self, elapsed: float) -> TextFrame:
-        return self.frames[min(len(self.frames) - 1, max(0, int(elapsed * self.frames_per_second)))]
+        return self.frames[self._frame_index(max(0, int(elapsed * self.frames_per_second)))]
+
+    def _frame_index(self, index: int) -> int:
+        return min(len(self.frames) - 1, index)
 
     @property
     def final(self) -> TextFrame:
         return self.frames[-1]
 
 
+class LoopingText(PlayedText):
+    """The same text playback, wrapping instead of finishing; final stays static when disabled."""
+
+    @property
+    def duration(self) -> None:
+        return None
+
+    def _frame_index(self, index: int) -> int:
+        return index % len(self.frames)
+
+
+# Single-cell activity ink; None inherits the frontend label's existing style.
+SPINNER = LoopingText(
+    tuple(TextFrame((((glyph, None),),)) for glyph in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
+    frames_per_second=10,
+)
+
 # The busy indicator while an agent works.
-ACTIVITY_SWEEP = GradientSweep((PrimaryColour, AccentColour, SecondaryColour),
-                               period=1.0, frames_per_second=15)
+ACTIVITY_SWEEP = BreathingSweep(
+    (AccentColour, PrimaryColour, AccentColour),
+    period=3.2, breathing_period=2.7, minimum_width=0.06, maximum_width=0.22,
+    minimum_thickness=0.5, maximum_thickness=0.5, frames_per_second=20,
+)
+
+# Goal standby is a quiet marker, not a claim of active work.
+STANDBY_PULSE = Pulse(
+    BackgroundColour, MutedColour, minimum=0.45, maximum=1.0,
+    period=1.6, frames_per_second=20,
+)
 
 # A message that has just arrived: its colour fades from the accent to its own.
 NEW_MESSAGE = Fade(AccentColour, AccentColour, duration=0.4, frames_per_second=30)
