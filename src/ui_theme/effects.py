@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from math import cos, tau
+from math import cos, floor, tau
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from ui_theme.colour import Rgb
@@ -150,6 +150,10 @@ class Effect(ABC, Generic[FrameT]):
     def finished(self, elapsed: float) -> bool:
         return self.duration is not None and elapsed >= self.duration
 
+    def cadence_time(self, now: float) -> float:
+        """The shared cadence boundary containing this clock sample."""
+        return floor(now * self.frames_per_second) / self.frames_per_second
+
     def phase_time(self, elapsed: float, now: float) -> float:
         """Visual time, independently of the animation's finite lifetime."""
         return elapsed
@@ -200,7 +204,7 @@ class BreathingSweep(Effect[Ribbon]):
 
     def phase_time(self, elapsed: float, now: float) -> float:
         # Repeated indicators show one clock phase, not one phase per mount.
-        return int(now * self.frames_per_second) / self.frames_per_second
+        return self.cadence_time(now)
 
     def frame(self, elapsed: float) -> Ribbon:
         breath = self.oscillation(elapsed, self.breathing_period)
