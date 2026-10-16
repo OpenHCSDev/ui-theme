@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, ActivityCoreColour, ActivityShoulderColour, ActivityTailColour,
+    AccentColour, PrimaryColour,
     BackgroundColour, ColourScheme, ForegroundColour, MutedColour, ThemeColour,
 )
 
@@ -302,10 +302,9 @@ SPINNER = LoopingText(
 
 # The busy indicator while an agent works.
 ACTIVITY_SWEEP = BreathingSweep(
-    (ActivityTailColour, ActivityShoulderColour, ActivityCoreColour,
-     ActivityShoulderColour, ActivityTailColour),
+    (AccentColour, PrimaryColour, AccentColour),
     period=3.2, breathing_period=2.7, minimum_width=0.06, maximum_width=0.22,
-    minimum_thickness=0.125, maximum_thickness=0.25, frames_per_second=20,
+    minimum_thickness=1.0, maximum_thickness=1.0, frames_per_second=20,
 )
 
 # Goal standby is a quiet marker, not a claim of active work.
