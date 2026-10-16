@@ -54,16 +54,31 @@ def test_wal_file_preserves_accents_and_uses_the_error_role_red(tmp_path):
     assert scheme.terminal.ansi[15] == Rgb(15, 15, 15)
 
 
+def test_wal_file_reads_pywal16_checksum_metadata_without_changing_the_palette(tmp_path):
+    path = tmp_path / WalFile.NAME
+    path.write_text(json.dumps({**WAL, "checksum": "0123456789abcdef0123456789abcdef"}))
+    assert WalFile.read(path) == WalFile.decode(WAL)
+
+
+@pytest.mark.parametrize("missing", WAL)
+def test_wal_file_still_requires_palette_fields_with_checksum_metadata(missing):
+    data = {**WAL, "checksum": "0123456789abcdef0123456789abcdef"}
+    del data[missing]
+    with pytest.raises(ValueError):
+        WalFile.decode(data)
+
+
 @pytest.mark.parametrize("change", [
-    {"checksum": "x"},
+    {"unknown": "x"},
     {"special": {**WAL["special"], "cursor": "red"}},
     {"special": {**WAL["special"], "extra": "#000000"}},
     {"colors": {**WAL["colors"], "color0": "#00000"}},
     {"alpha": 100},
 ])
-def test_wal_file_rejects_what_pywal_does_not_write(change):
+@pytest.mark.parametrize("metadata", [{}, {"checksum": "0123456789abcdef0123456789abcdef"}])
+def test_wal_file_rejects_what_pywal_does_not_write(change, metadata):
     with pytest.raises(ValueError):
-        WalFile.decode({**WAL, **change})
+        WalFile.decode({**WAL, **metadata, **change})
 
 
 def test_wal_directory_honours_pywal_cache_dir():
