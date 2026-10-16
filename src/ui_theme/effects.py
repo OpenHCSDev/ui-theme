@@ -19,13 +19,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from math import cos, tau
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from math import cos, floor, tau
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
     AccentColour, PrimaryColour,
-    BackgroundColour, ColourScheme, ForegroundColour, MutedColour, ThemeColour,
+    BackgroundColour, ColourScheme, ForegroundColour, MutedColour, SecondaryColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -70,17 +70,23 @@ class Ribbon(Gradient):
     start: float
     end: float
     thickness: float
+    taper_fraction: ClassVar[float] = 1 / 8
 
     def sample(self, position: float) -> tuple[type[ThemeColour], type[ThemeColour], float, float]:
         place = (position - self.start) / (self.end - self.start)
         if not 0 < place < 1:
-            return (*self.at(0), 0.0)
-        # Sample the finite palette, without wrapping its last stop to its first.
-        start, end, amount = self.at(place * (len(self.stops) - 1) / len(self.stops))
-        # Ease between colour stops; taper just the ends, not the whole line
-        # into a dome. The bright body keeps the declared thin ink height.
+            return self.stops[0], self.stops[0], 0.0, 0.0
+        # The complete finite palette spans the full-height body. Its last
+        # colour is reached before the ink tapers away, never wrapped to first.
+        colour_place = min(1.0, max(0.0,
+            (place - self.taper_fraction) / (1 - 2 * self.taper_fraction)))
+        scaled = colour_place * (len(self.stops) - 1)
+        index = int(scaled)
+        start = self.stops[index]
+        end = self.stops[min(index + 1, len(self.stops) - 1)]
+        amount = scaled - index
         amount = amount * amount * (3 - 2 * amount)
-        edge = min(1.0, 8 * place, 8 * (1 - place))
+        edge = min(1.0, place / self.taper_fraction, (1 - place) / self.taper_fraction)
         edge = edge * edge * (3 - 2 * edge)
         return start, end, amount, self.thickness * edge
 
@@ -144,6 +150,14 @@ class Effect(ABC, Generic[FrameT]):
     def finished(self, elapsed: float) -> bool:
         return self.duration is not None and elapsed >= self.duration
 
+    def cadence_time(self, now: float) -> float:
+        """The shared cadence boundary containing this clock sample."""
+        return floor(now * self.frames_per_second) / self.frames_per_second
+
+    def phase_time(self, elapsed: float, now: float) -> float:
+        """Visual time, independently of the animation's finite lifetime."""
+        return elapsed
+
     @staticmethod
     def phase(elapsed: float, period: float) -> float:
         return (elapsed / period) % 1.0
@@ -187,6 +201,10 @@ class BreathingSweep(Effect[Ribbon]):
     maximum_thickness: float
     frames_per_second: float
     duration: float | None = None
+
+    def phase_time(self, elapsed: float, now: float) -> float:
+        # Repeated indicators show one clock phase, not one phase per mount.
+        return self.cadence_time(now)
 
     def frame(self, elapsed: float) -> Ribbon:
         breath = self.oscillation(elapsed, self.breathing_period)
@@ -302,8 +320,8 @@ SPINNER = LoopingText(
 
 # The busy indicator while an agent works.
 ACTIVITY_SWEEP = BreathingSweep(
-    (AccentColour, PrimaryColour, AccentColour),
-    period=3.2, breathing_period=2.7, minimum_width=0.06, maximum_width=0.22,
+    (PrimaryColour, AccentColour, SecondaryColour),
+    period=3.2, breathing_period=2.7, minimum_width=0.32, maximum_width=0.64,
     minimum_thickness=0.5, maximum_thickness=0.5, frames_per_second=20,
 )
 

@@ -1,17 +1,16 @@
 """One animation clock for every running effect.
 
-Paint derives from time: a target reads `animation.frame()` when it paints,
-which asks the clock for the time, so it never holds a frame counter. The
-clock only says when to paint: a backend gives it one timer (`schedule`), the
-clock ticks at the fastest running effect's rate, repaints the visible targets
-whose next frame is due, gives each finished effect one last paint and stops
-ticking when nothing runs.
+Paint derives from one clock-owned instant: a target reads `animation.frame()`
+without sampling wall time or holding a frame counter. A backend gives the
+clock one timer (`schedule`). It ticks at the fastest running effect's rate,
+repaints visible targets together when their shared cadence boundary changes,
+gives each finished effect one last paint and stops ticking when nothing runs.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from time import monotonic
 from typing import Generic, Protocol, TypeVar
 
@@ -33,24 +32,23 @@ class AnimationTarget(Protocol):
 
 @dataclass(eq=False)
 class Animation(Generic[FrameT]):
-    """One effect running on one target since `started`."""
+    """One effect's lifetime; the clock owns its target association and cadence."""
 
     clock: AnimationClock
     effect: Effect[FrameT]
-    target: AnimationTarget
     started: float
-    due: float = field(default=0.0)
 
     @property
     def elapsed(self) -> float:
-        return self.clock.now() - self.started
+        return max(0.0, self.clock.time - self.started)
 
     def frame(self) -> FrameT:
         """What the effect shows now; its final frame once finished or when animation is off."""
         if not self.clock.enabled:
             return self.effect.final
         elapsed = self.elapsed
-        return self.effect.final if self.effect.finished(elapsed) else self.effect.frame(elapsed)
+        return (self.effect.final if self.effect.finished(elapsed)
+                else self.effect.frame(self.effect.phase_time(elapsed, self.clock.time)))
 
 
 class AnimationClock:
@@ -62,6 +60,9 @@ class AnimationClock:
         # seconds, or to stop calling it when interval is None.
         self.schedule = schedule
         self.now = now
+        # One admitted paint instant. Painting never samples wall time; ticks
+        # advance this instant and invalidate the due targets together.
+        self.time = now()
         self.enabled = enabled
         self.running: dict[AnimationTarget, Animation[Frame]] = {}
         self._interval: float | None = None
@@ -69,7 +70,9 @@ class AnimationClock:
     def start(self, effect: Effect[FrameT], target: AnimationTarget) -> Animation[FrameT]:
         """Run `effect` on `target`, replacing what ran there."""
         now = self.now()
-        animation: Animation[FrameT] = Animation(self, effect, target, now, now)
+        if not self.running:
+            self.time = now
+        animation: Animation[FrameT] = Animation(self, effect, now)
         if self.enabled:
             self.running[target] = animation  # type: ignore[assignment]
             self._reschedule()
@@ -80,13 +83,15 @@ class AnimationClock:
             self._reschedule()
 
     def tick(self) -> None:
-        now = self.now()
+        previous = self.time
+        now = self.time = self.now()
         for target, animation in list(self.running.items()):
-            finished = animation.effect.finished(now - animation.started)
+            effect = animation.effect
+            finished = effect.finished(animation.elapsed)
             if finished:
                 del self.running[target]
-            if finished or (now >= animation.due and target.animation_visible):
-                animation.due = now + 1 / animation.effect.frames_per_second
+            if finished or (target.animation_visible
+                    and effect.cadence_time(previous) != effect.cadence_time(now)):
                 target.repaint()
         self._reschedule()
 
