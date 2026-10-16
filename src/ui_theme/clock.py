@@ -50,7 +50,8 @@ class Animation(Generic[FrameT]):
         if not self.clock.enabled:
             return self.effect.final
         elapsed = self.elapsed
-        return self.effect.final if self.effect.finished(elapsed) else self.effect.frame(elapsed)
+        return (self.effect.final if self.effect.finished(elapsed)
+                else self.effect.frame(self.effect.phase_time(elapsed, self.clock.now())))
 
 
 class AnimationClock:
