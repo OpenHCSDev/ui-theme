@@ -304,7 +304,7 @@ SPINNER = LoopingText(
 ACTIVITY_SWEEP = BreathingSweep(
     (AccentColour, PrimaryColour, AccentColour),
     period=3.2, breathing_period=2.7, minimum_width=0.06, maximum_width=0.22,
-    minimum_thickness=1.0, maximum_thickness=1.0, frames_per_second=20,
+    minimum_thickness=0.5, maximum_thickness=0.5, frames_per_second=20,
 )
 
 # Goal standby is a quiet marker, not a claim of active work.
