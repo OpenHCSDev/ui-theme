@@ -84,6 +84,15 @@ class WarningColour(CoreColour):
     name = "warning"
 
 
+class BlockCursorBackgroundColour(ThemeColour):
+    name = "block-cursor-background"
+    background = True
+
+
+class BlockCursorForegroundColour(ThemeColour):
+    name = "block-cursor-foreground"
+
+
 class ErrorColour(CoreColour):
     """Failures stay recognisably red in monochromatic wallpaper palettes."""
 
