@@ -9,6 +9,7 @@ samples it into cells, Qt into a painter, a web view into CSS.
 Frames:
 
 - `Gradient`: theme colours repeating along a line, shifted by a fraction;
+- `Ribbon`: a finite gradient with tapered, fractional-height ink;
 - `Mix`: one colour part of the way from one theme colour to another;
 - `Band`: a theme colour over a span of a line;
 - `TextFrame`: lines of text, each character in its own colour.
@@ -17,12 +18,15 @@ Frames:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from math import cos, floor, tau
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, ColourScheme, PrimaryColour, SecondaryColour, ThemeColour,
+    AccentColour, PrimaryColour,
+    BackgroundColour, ColourScheme, ForegroundColour, MutedColour, SecondaryColour, ThemeColour,
 )
 
 if TYPE_CHECKING:
@@ -52,8 +56,40 @@ class Gradient(Frame):
         index = int(place) % len(self.stops)
         return self.stops[index], self.stops[(index + 1) % len(self.stops)], place - int(place)
 
+    def sample(self, position: float) -> tuple[type[ThemeColour], type[ThemeColour], float, float]:
+        """Colour stops, blend and fraction of the target's ink height at this point."""
+        return (*self.at(position), 1.0)
+
     def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> Any:
         return backend.paint_gradient(self, target)
+
+
+@dataclass(frozen=True)
+class Ribbon(Gradient):
+    """A finite gradient with a bright core and tapered, fractional-height tails."""
+
+    start: float
+    end: float
+    thickness: float
+    taper_fraction: ClassVar[float] = 1 / 8
+
+    def sample(self, position: float) -> tuple[type[ThemeColour], type[ThemeColour], float, float]:
+        place = (position - self.start) / (self.end - self.start)
+        if not 0 < place < 1:
+            return self.stops[0], self.stops[0], 0.0, 0.0
+        # The complete finite palette spans the full-height body. Its last
+        # colour is reached before the ink tapers away, never wrapped to first.
+        colour_place = min(1.0, max(0.0,
+            (place - self.taper_fraction) / (1 - 2 * self.taper_fraction)))
+        scaled = colour_place * (len(self.stops) - 1)
+        index = int(scaled)
+        start = self.stops[index]
+        end = self.stops[min(index + 1, len(self.stops) - 1)]
+        amount = scaled - index
+        amount = amount * amount * (3 - 2 * amount)
+        edge = min(1.0, place / self.taper_fraction, (1 - place) / self.taper_fraction)
+        edge = edge * edge * (3 - 2 * edge)
+        return start, end, amount, self.thickness * edge
 
 
 @dataclass(frozen=True)
@@ -73,7 +109,7 @@ class Mix(Frame):
 
 @dataclass(frozen=True)
 class Band(Frame):
-    """`colour` over the span `start`–`end` (fractions of the line); nothing elsewhere."""
+    """`colour` over `start`–`end`."""
 
     colour: type[ThemeColour]
     start: float
@@ -96,6 +132,23 @@ class TextFrame(Frame):
         return backend.paint_text(self, target)
 
 
+@dataclass(frozen=True)
+class Amount(Frame):
+    """A unitless paint amount; the frontend owns its physical rendering."""
+
+    value: float
+
+    def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> float:
+        return self.value
+
+
+class Position(Amount):
+    """Interpolate placement in the frontend's own coordinate units."""
+
+    def displacement(self, origin: float, destination: float) -> float:
+        return (origin - destination) * (1 - self.value)
+
+
 class Effect(ABC, Generic[FrameT]):
     """An animation: a frame for any time since it started."""
 
@@ -112,8 +165,55 @@ class Effect(ABC, Generic[FrameT]):
     def final(self) -> FrameT:
         """What shows when it has finished, or when animation is off."""
 
+    @property
+    def finite(self) -> bool:
+        return self.duration is not None
+
     def finished(self, elapsed: float) -> bool:
-        return self.duration is not None and elapsed >= self.duration
+        return self.finite and elapsed >= cast(float, self.duration)
+
+    def cadence_time(self, now: float) -> float:
+        """The shared cadence boundary containing this clock sample."""
+        return floor(now * self.frames_per_second) / self.frames_per_second
+
+    def phase_time(self, elapsed: float, now: float) -> float:
+        """Repeated effects share the clock phase; finite effects start at zero."""
+        return elapsed if self.finite else self.cadence_time(now)
+
+    @staticmethod
+    def phase(elapsed: float, period: float) -> float:
+        return (elapsed / period) % 1.0
+
+    @classmethod
+    def oscillation(cls, elapsed: float, period: float) -> float:
+        return (1 - cos(tau * cls.phase(elapsed, period))) / 2
+
+    @staticmethod
+    def progress(elapsed: float, duration: float) -> float:
+        return min(1.0, max(0.0, elapsed / duration))
+
+    @staticmethod
+    def ease_out(progress: float) -> float:
+        return 1 - (1 - progress) ** 2
+
+
+@dataclass(frozen=True)
+class Transition(Effect[FrameT]):
+    """One eased, finite interpolation, producing its declared frame type."""
+
+    frame_type: Callable[[float], FrameT]
+    start: float
+    end: float
+    duration: float
+    frames_per_second: float
+
+    def frame(self, elapsed: float) -> FrameT:
+        progress = self.ease_out(self.progress(elapsed, self.duration))
+        return self.frame_type(self.start + (self.end - self.start) * progress)
+
+    @property
+    def final(self) -> FrameT:
+        return self.frame_type(self.end)
 
 
 @dataclass(frozen=True)
@@ -126,11 +226,59 @@ class GradientSweep(Effect[Gradient]):
     duration: float | None = None
 
     def frame(self, elapsed: float) -> Gradient:
-        return Gradient(self.stops, (elapsed / self.period) % 1.0)
+        return Gradient(self.stops, self.phase(elapsed, self.period))
 
     @property
     def final(self) -> Gradient:
         return Gradient(self.stops, 0.0)
+
+
+@dataclass(frozen=True)
+class BreathingSweep(Effect[Ribbon]):
+    """A tapered gradient travels, shrinks and expands; its size is never progress."""
+
+    stops: tuple[type[ThemeColour], ...]
+    period: float
+    breathing_period: float
+    minimum_width: float
+    maximum_width: float
+    minimum_thickness: float
+    maximum_thickness: float
+    frames_per_second: float
+    duration: float | None = None
+
+    def frame(self, elapsed: float) -> Ribbon:
+        breath = self.oscillation(elapsed, self.breathing_period)
+        width = self.minimum_width + (self.maximum_width - self.minimum_width) * breath
+        thickness = self.minimum_thickness + (self.maximum_thickness - self.minimum_thickness) * breath
+        lead = self.phase(elapsed, self.period) * (1 + width)
+        return Ribbon(self.stops, 0.0, lead - width, lead, thickness)
+
+    @property
+    def final(self) -> Ribbon:
+        width = (self.minimum_width + self.maximum_width) / 2
+        thickness = (self.minimum_thickness + self.maximum_thickness) / 2
+        return Ribbon(self.stops, 0.0, (1 - width) / 2, (1 + width) / 2, thickness)
+
+@dataclass(frozen=True)
+class Pulse(Effect[Mix]):
+    """A colour mix breathes between declared bounds, without a frame counter."""
+
+    start: type[ThemeColour]
+    end: type[ThemeColour]
+    minimum: float
+    maximum: float
+    period: float
+    frames_per_second: float
+    duration: float | None = None
+
+    def frame(self, elapsed: float) -> Mix:
+        return Mix(self.start, self.end,
+                   self.maximum - (self.maximum - self.minimum) * self.oscillation(elapsed, self.period))
+
+    @property
+    def final(self) -> Mix:
+        return Mix(self.start, self.end, self.maximum)
 
 
 @dataclass(frozen=True)
@@ -143,8 +291,7 @@ class Fade(Effect[Mix]):
     frames_per_second: float
 
     def frame(self, elapsed: float) -> Mix:
-        progress = min(1.0, max(0.0, elapsed / self.duration))
-        return Mix(self.start, self.end, 1 - (1 - progress) ** 2)
+        return Mix(self.start, self.end, self.ease_out(self.progress(elapsed, self.duration)))
 
     @property
     def final(self) -> Mix:
@@ -164,7 +311,7 @@ class Wipe(Effect[Band]):
     frames_per_second: float
 
     def frame(self, elapsed: float) -> Band:
-        lead = min(1.0, max(0.0, elapsed / self.duration)) * (1 + self.width)
+        lead = self.progress(elapsed, self.duration) * (1 + self.width)
         return Band(self.colour, lead - self.width, lead)
 
     @property
@@ -180,23 +327,63 @@ class PlayedText(Effect[TextFrame]):
     frames_per_second: float
 
     @property
-    def duration(self) -> float:  # type: ignore[override]
+    def duration(self) -> float | None:  # type: ignore[override]
         return len(self.frames) / self.frames_per_second
 
+    def phase_time(self, elapsed: float, now: float) -> float:
+        return elapsed
+
     def frame(self, elapsed: float) -> TextFrame:
-        return self.frames[min(len(self.frames) - 1, max(0, int(elapsed * self.frames_per_second)))]
+        index = max(0, int(elapsed * self.frames_per_second))
+        count = len(self.frames)
+        return self.frames[min(count - 1, index) if self.finite else index % count]
 
     @property
     def final(self) -> TextFrame:
         return self.frames[-1]
 
 
+class LoopingText(PlayedText):
+    """The same text playback, wrapping instead of finishing; final stays static when disabled."""
+
+    duration = None
+
+
+CURSOR_BLINK = Pulse(
+    BackgroundColour, AccentColour, minimum=0.2, maximum=1.0, period=1.0, frames_per_second=2,
+)
+
+# Single-cell activity ink; None inherits the frontend label's existing style.
+SPINNER = LoopingText(
+    tuple(TextFrame((((glyph, None),),)) for glyph in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
+    frames_per_second=10,
+)
+
 # The busy indicator while an agent works.
-ACTIVITY_SWEEP = GradientSweep((PrimaryColour, AccentColour, SecondaryColour),
-                               period=1.0, frames_per_second=15)
+ACTIVITY_SWEEP = BreathingSweep(
+    (PrimaryColour, AccentColour, SecondaryColour),
+    period=3.2, breathing_period=2.7, minimum_width=0.32, maximum_width=0.64,
+    minimum_thickness=0.5, maximum_thickness=0.5, frames_per_second=20,
+)
+
+# Goal standby is a quiet marker, not a claim of active work.
+STANDBY_PULSE = Pulse(
+    BackgroundColour, MutedColour, minimum=0.45, maximum=1.0,
+    period=1.6, frames_per_second=20,
+)
 
 # A message that has just arrived: its colour fades from the accent to its own.
 NEW_MESSAGE = Fade(AccentColour, AccentColour, duration=0.4, frames_per_second=30)
+
+# Changed text rises from the background into each run's own colour.
+NEW_TEXT = Fade(BackgroundColour, ForegroundColour, duration=0.35, frames_per_second=30)
+
+# Sidebar placement and appearance share one duration, cadence and easing.
+_SIDEBAR_DURATION = 0.25
+_SIDEBAR_FPS = 60
+SIDEBAR_MOVE = Transition(Position, 0.0, 1.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
+SIDEBAR_ENTER = Transition(Amount, 0.0, 1.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
+SIDEBAR_EXIT = Transition(Amount, 1.0, 0.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
 
 # The current tab's underline when a tab is chosen.
 TAB_WIPE = Wipe(AccentColour, width=0.35, duration=0.25, frames_per_second=60)

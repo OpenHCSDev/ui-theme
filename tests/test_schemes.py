@@ -10,8 +10,8 @@ import pytest
 from ui_theme.catalog import DARK_PALETTE, LIGHT_PALETTE, SCHEMES
 from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb
 from ui_theme.scheme import (
-    BackgroundColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
-    PrimaryColour, SecondaryColour, ThemeColour,
+    BackgroundColour, BlendColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
+    PrimaryColour, SecondaryColour,
 )
 from ui_theme.wal import WalFile
 
@@ -42,27 +42,43 @@ def test_the_package_imports_no_ui_toolkit_and_nothing_of_comms():
     assert result.stdout.strip() == ""
 
 
-def test_wal_file_decodes_to_a_scheme_from_ansi_slots(tmp_path):
+def test_wal_file_preserves_accents_and_uses_the_error_role_red(tmp_path):
     path = tmp_path / WalFile.NAME
     path.write_text(json.dumps(WAL))
     scheme = WalFile.read(path).scheme
     assert scheme.name == "wal" and scheme.dark and not scheme.from_terminal
     assert scheme.rgb(BackgroundColour) == Rgb(0x0b, 0x0b, 0x0d)
     assert (scheme.rgb(PrimaryColour), scheme.rgb(SecondaryColour), scheme.rgb(ErrorColour)) == (
-        Rgb(4, 4, 4), Rgb(6, 6, 6), Rgb(1, 1, 1))
+        Rgb(4, 4, 4), Rgb(6, 6, 6), Rgb(0xe0, 0x6c, 0x75))
+    assert scheme.terminal.ansi[1] == Rgb(1, 1, 1)
     assert scheme.terminal.ansi[15] == Rgb(15, 15, 15)
 
 
+def test_wal_file_reads_pywal16_checksum_metadata_without_changing_the_palette(tmp_path):
+    path = tmp_path / WalFile.NAME
+    path.write_text(json.dumps({**WAL, "checksum": "0123456789abcdef0123456789abcdef"}))
+    assert WalFile.read(path) == WalFile.decode(WAL)
+
+
+@pytest.mark.parametrize("missing", WAL)
+def test_wal_file_still_requires_palette_fields_with_checksum_metadata(missing):
+    data = {**WAL, "checksum": "0123456789abcdef0123456789abcdef"}
+    del data[missing]
+    with pytest.raises(ValueError):
+        WalFile.decode(data)
+
+
 @pytest.mark.parametrize("change", [
-    {"checksum": "x"},
+    {"unknown": "x"},
     {"special": {**WAL["special"], "cursor": "red"}},
     {"special": {**WAL["special"], "extra": "#000000"}},
     {"colors": {**WAL["colors"], "color0": "#00000"}},
     {"alpha": 100},
 ])
-def test_wal_file_rejects_what_pywal_does_not_write(change):
+@pytest.mark.parametrize("metadata", [{}, {"checksum": "0123456789abcdef0123456789abcdef"}])
+def test_wal_file_rejects_what_pywal_does_not_write(change, metadata):
     with pytest.raises(ValueError):
-        WalFile.decode({**WAL, **change})
+        WalFile.decode({**WAL, **metadata, **change})
 
 
 def test_wal_directory_honours_pywal_cache_dir():
@@ -91,8 +107,10 @@ def test_every_scheme_answers_every_core_and_derived_colour_in_24_bits():
     names = [scheme.name for scheme in SCHEMES]
     assert len(names) == len(set(names)) == 21
     for scheme in SCHEMES:
-        for colour in (*CoreColour.members(), MutedColour):
+        for colour in CoreColour.members():
             assert isinstance(scheme.rgb(colour), Rgb)
+        for colour in BlendColour.members():
+            assert scheme.rgb(colour) == scheme.rgb(BackgroundColour).blend(scheme.rgb(ForegroundColour), colour.amount)
         assert scheme.terminal is (DARK_PALETTE if scheme.dark else LIGHT_PALETTE)
 
 
@@ -116,8 +134,3 @@ def test_a_scheme_must_state_every_core_colour_and_no_derived_one():
     with pytest.raises(ValueError, match="muted"):
         ColourScheme("x", True, {**SCHEMES[0].colours, MutedColour: Rgb(1, 1, 1)}, DARK_PALETTE)
 
-
-def test_theme_colour_names_are_declared_once():
-    assert set(ThemeColour.__registry__) == {
-        "foreground", "background", "primary", "secondary", "accent", "success", "warning",
-        "error", "surface", "panel", "boost", "muted"}

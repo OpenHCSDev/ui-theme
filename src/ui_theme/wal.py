@@ -4,8 +4,8 @@ pywal (`wal -i`, `wal -R`) writes `colors.json` in its cache directory, in
 place, and sends the same colours to every open terminal as OSC 4/10/11
 sequences, so a scheme of terminal colours follows it without reading the
 file. A true-colour scheme reads the file. The format is pywal's and is decoded
-exactly as written: a key pywal does not write, or a colour not in `#rrggbb`
-form, is an error.
+with optional checksum metadata written by pywal16. Colours still require
+`#rrggbb` form; checksum metadata does not participate in the palette.
 """
 
 from __future__ import annotations
@@ -23,10 +23,12 @@ COLOURS = tuple(f"color{index}" for index in range(16))
 SPECIAL = ("background", "foreground", "cursor")
 
 
-def _exact(value: Any, keys: tuple[str, ...], where: str) -> Mapping[str, Any]:
-    if not isinstance(value, dict) or set(value) != set(keys):
+def _exact(value: Any, keys: tuple[str, ...], where: str,
+           *, optional: tuple[str, ...] = ()) -> Mapping[str, Any]:
+    if not isinstance(value, dict) or not set(keys) <= set(value) <= set(keys + optional):
         found = sorted(value) if isinstance(value, dict) else type(value).__name__
-        raise ValueError(f"pywal's {where} has keys {list(keys)}, not {found}")
+        raise ValueError(f"pywal's {where} requires keys {list(keys)}"
+                         f" with optional {list(optional)}, not {found}")
     return value
 
 
@@ -49,7 +51,8 @@ class WalFile:
 
     @classmethod
     def decode(cls, data: Any) -> WalFile:
-        top = _exact(data, ("wallpaper", "alpha", "special", "colors"), "file")
+        top = _exact(data, ("wallpaper", "alpha", "special", "colors"), "file",
+                     optional=("checksum",))
         special = _exact(top["special"], SPECIAL, "special")
         colours = _exact(top["colors"], COLOURS, "colors")
         for key in ("wallpaper", "alpha"):

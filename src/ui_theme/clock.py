@@ -1,17 +1,16 @@
 """One animation clock for every running effect.
 
-Paint derives from time: a target reads `animation.frame()` when it paints,
-which asks the clock for the time, so it never holds a frame counter. The
-clock only says when to paint: a backend gives it one timer (`schedule`), the
-clock ticks at the fastest running effect's rate, repaints the visible targets
-whose next frame is due, gives each finished effect one last paint and stops
-ticking when nothing runs.
+Paint derives from one clock-owned instant: a target reads `animation.frame()`
+without sampling wall time or holding a frame counter. A backend gives the
+clock one timer (`schedule`). It ticks at the fastest running effect's rate,
+repaints visible targets together when their shared cadence boundary changes,
+gives each finished effect one last paint and stops ticking when nothing runs.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from time import monotonic
 from typing import Generic, Protocol, TypeVar
 
@@ -33,24 +32,27 @@ class AnimationTarget(Protocol):
 
 @dataclass(eq=False)
 class Animation(Generic[FrameT]):
-    """One effect running on one target since `started`."""
+    """One effect's lifetime; the clock owns its target association and cadence."""
 
     clock: AnimationClock
     effect: Effect[FrameT]
-    target: AnimationTarget
     started: float
-    due: float = field(default=0.0)
 
     @property
     def elapsed(self) -> float:
-        return self.clock.now() - self.started
+        return max(0.0, self.clock.time - self.started)
 
     def frame(self) -> FrameT:
         """What the effect shows now; its final frame once finished or when animation is off."""
         if not self.clock.enabled:
             return self.effect.final
         elapsed = self.elapsed
-        return self.effect.final if self.effect.finished(elapsed) else self.effect.frame(elapsed)
+        return (self.effect.final if self.effect.finished(elapsed)
+                else self.effect.frame(self.effect.phase_time(elapsed, self.clock.time)))
+
+    def stop(self) -> None:
+        self.clock.running.pop(self, None)
+        self.clock.refresh()
 
 
 class AnimationClock:
@@ -62,37 +64,48 @@ class AnimationClock:
         # seconds, or to stop calling it when interval is None.
         self.schedule = schedule
         self.now = now
+        # One paint instant. Painting never samples wall time; ticks
+        # advance this instant and invalidate the due targets together.
+        self.time = now()
         self.enabled = enabled
-        self.running: dict[AnimationTarget, Animation[Frame]] = {}
+        self.running: dict[Animation[Frame], AnimationTarget] = {}
         self._interval: float | None = None
 
     def start(self, effect: Effect[FrameT], target: AnimationTarget) -> Animation[FrameT]:
-        """Run `effect` on `target`, replacing what ran there."""
-        now = self.now()
-        animation: Animation[FrameT] = Animation(self, effect, target, now, now)
+        """Run an effect; independent effects on one target share this clock."""
+        animation: Animation[FrameT] = Animation(self, effect, self.now())
         if self.enabled:
-            self.running[target] = animation  # type: ignore[assignment]
-            self._reschedule()
+            self.running[animation] = target
+            self.refresh()
         return animation
 
     def stop(self, target: AnimationTarget) -> None:
-        if self.running.pop(target, None) is not None:
-            self._reschedule()
+        for animation, owner in tuple(self.running.items()):
+            if owner is target:
+                del self.running[animation]
+        self.refresh()
 
     def tick(self) -> None:
-        now = self.now()
-        for target, animation in list(self.running.items()):
-            finished = animation.effect.finished(now - animation.started)
+        previous = self.time
+        now = self.time = self.now()
+        repaint: set[AnimationTarget] = set()
+        for animation, target in list(self.running.items()):
+            effect = animation.effect
+            finished = effect.finished(animation.elapsed)
             if finished:
-                del self.running[target]
-            if finished or (now >= animation.due and target.animation_visible):
-                animation.due = now + 1 / animation.effect.frames_per_second
-                target.repaint()
-        self._reschedule()
+                del self.running[animation]
+            if finished or (target.animation_visible
+                    and effect.cadence_time(previous) != effect.cadence_time(now)):
+                repaint.add(target)
+        for target in repaint:
+            target.repaint()
+        self.refresh()
 
-    def _reschedule(self) -> None:
-        interval = (1 / max(a.effect.frames_per_second for a in self.running.values())
-                    if self.running else None)
+    def refresh(self) -> None:
+        interval = min((1 / animation.effect.frames_per_second for animation, target in tuple(self.running.items())
+                        if self.enabled and target.animation_visible), default=None)
         if interval != self._interval:
+            if self._interval is None and interval is not None:
+                self.time = self.now()
             self._interval = interval
             self.schedule(interval)
