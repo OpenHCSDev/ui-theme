@@ -335,9 +335,8 @@ STANDBY_PULSE = Pulse(
 # A message that has just arrived: its colour fades from the accent to its own.
 NEW_MESSAGE = Fade(AccentColour, AccentColour, duration=0.4, frames_per_second=30)
 
-# Text that has just arrived on a live tail: the accent fades into its own
-# colours (a backend blends each run's colour, not one colour).
-NEW_TEXT = Fade(AccentColour, ForegroundColour, duration=0.35, frames_per_second=30)
+# Changed text rises from the background into each run's own colour.
+NEW_TEXT = Fade(BackgroundColour, ForegroundColour, duration=0.35, frames_per_second=30)
 
 # The current tab's underline when a tab is chosen.
 TAB_WIPE = Wipe(AccentColour, width=0.35, duration=0.25, frames_per_second=60)
