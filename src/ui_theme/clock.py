@@ -50,6 +50,10 @@ class Animation(Generic[FrameT]):
         return (self.effect.final if self.effect.finished(elapsed)
                 else self.effect.frame(self.effect.phase_time(elapsed, self.clock.time)))
 
+    def stop(self) -> None:
+        self.clock.running.pop(self, None)
+        self.clock.refresh()
+
 
 class AnimationClock:
     """Runs every animation's cadence from one timer."""
@@ -60,40 +64,45 @@ class AnimationClock:
         # seconds, or to stop calling it when interval is None.
         self.schedule = schedule
         self.now = now
-        # One admitted paint instant. Painting never samples wall time; ticks
+        # One paint instant. Painting never samples wall time; ticks
         # advance this instant and invalidate the due targets together.
         self.time = now()
         self.enabled = enabled
-        self.running: dict[AnimationTarget, Animation[Frame]] = {}
+        self.running: dict[Animation[Frame], AnimationTarget] = {}
         self._interval: float | None = None
 
     def start(self, effect: Effect[FrameT], target: AnimationTarget) -> Animation[FrameT]:
-        """Run `effect` on `target`, replacing what ran there."""
+        """Run an effect; independent effects on one target share this clock."""
         animation: Animation[FrameT] = Animation(self, effect, self.now())
         if self.enabled:
-            self.running[target] = animation  # type: ignore[assignment]
+            self.running[animation] = target
             self.refresh()
         return animation
 
     def stop(self, target: AnimationTarget) -> None:
-        if self.running.pop(target, None) is not None:
-            self.refresh()
+        for animation, owner in tuple(self.running.items()):
+            if owner is target:
+                del self.running[animation]
+        self.refresh()
 
     def tick(self) -> None:
         previous = self.time
         now = self.time = self.now()
-        for target, animation in list(self.running.items()):
+        repaint: set[AnimationTarget] = set()
+        for animation, target in list(self.running.items()):
             effect = animation.effect
             finished = effect.finished(animation.elapsed)
             if finished:
-                del self.running[target]
+                del self.running[animation]
             if finished or (target.animation_visible
                     and effect.cadence_time(previous) != effect.cadence_time(now)):
-                target.repaint()
+                repaint.add(target)
+        for target in repaint:
+            target.repaint()
         self.refresh()
 
     def refresh(self) -> None:
-        interval = min((1 / animation.effect.frames_per_second for target, animation in tuple(self.running.items())
+        interval = min((1 / animation.effect.frames_per_second for animation, target in tuple(self.running.items())
                         if self.enabled and target.animation_visible), default=None)
         if interval != self._interval:
             if self._interval is None and interval is not None:
