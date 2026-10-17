@@ -20,7 +20,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from math import cos, floor, tau
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
@@ -147,16 +147,20 @@ class Effect(ABC, Generic[FrameT]):
     def final(self) -> FrameT:
         """What shows when it has finished, or when animation is off."""
 
+    @property
+    def finite(self) -> bool:
+        return self.duration is not None
+
     def finished(self, elapsed: float) -> bool:
-        return self.duration is not None and elapsed >= self.duration
+        return self.finite and elapsed >= cast(float, self.duration)
 
     def cadence_time(self, now: float) -> float:
         """The shared cadence boundary containing this clock sample."""
         return floor(now * self.frames_per_second) / self.frames_per_second
 
     def phase_time(self, elapsed: float, now: float) -> float:
-        """Visual time, independently of the animation's finite lifetime."""
-        return elapsed
+        """Repeated effects share the clock phase; finite effects start at zero."""
+        return elapsed if self.finite else self.cadence_time(now)
 
     @staticmethod
     def phase(elapsed: float, period: float) -> float:
@@ -201,10 +205,6 @@ class BreathingSweep(Effect[Ribbon]):
     maximum_thickness: float
     frames_per_second: float
     duration: float | None = None
-
-    def phase_time(self, elapsed: float, now: float) -> float:
-        # Repeated indicators show one clock phase, not one phase per mount.
-        return self.cadence_time(now)
 
     def frame(self, elapsed: float) -> Ribbon:
         breath = self.oscillation(elapsed, self.breathing_period)
@@ -290,11 +290,13 @@ class PlayedText(Effect[TextFrame]):
     def duration(self) -> float | None:  # type: ignore[override]
         return len(self.frames) / self.frames_per_second
 
-    def frame(self, elapsed: float) -> TextFrame:
-        return self.frames[self._frame_index(max(0, int(elapsed * self.frames_per_second)))]
+    def phase_time(self, elapsed: float, now: float) -> float:
+        return elapsed
 
-    def _frame_index(self, index: int) -> int:
-        return min(len(self.frames) - 1, index)
+    def frame(self, elapsed: float) -> TextFrame:
+        index = max(0, int(elapsed * self.frames_per_second))
+        count = len(self.frames)
+        return self.frames[min(count - 1, index) if self.finite else index % count]
 
     @property
     def final(self) -> TextFrame:
@@ -304,13 +306,12 @@ class PlayedText(Effect[TextFrame]):
 class LoopingText(PlayedText):
     """The same text playback, wrapping instead of finishing; final stays static when disabled."""
 
-    @property
-    def duration(self) -> None:
-        return None
+    duration = None
 
-    def _frame_index(self, index: int) -> int:
-        return index % len(self.frames)
 
+CURSOR_BLINK = Pulse(
+    BackgroundColour, AccentColour, minimum=0.2, maximum=1.0, period=1.0, frames_per_second=2,
+)
 
 # Single-cell activity ink; None inherits the frontend label's existing style.
 SPINNER = LoopingText(
