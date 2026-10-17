@@ -142,13 +142,6 @@ class Amount(Frame):
         return self.value
 
 
-class Position(Amount):
-    """Interpolate placement in the frontend's own coordinate units."""
-
-    def displacement(self, origin: float, destination: float) -> float:
-        return (origin - destination) * (1 - self.value)
-
-
 class Effect(ABC, Generic[FrameT]):
     """An animation: a frame for any time since it started."""
 
@@ -381,7 +374,6 @@ NEW_TEXT = Fade(BackgroundColour, ForegroundColour, duration=0.35, frames_per_se
 # Sidebar placement and appearance share one duration, cadence and easing.
 _SIDEBAR_DURATION = 0.25
 _SIDEBAR_FPS = 60
-SIDEBAR_MOVE = Transition(Position, 0.0, 1.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
 SIDEBAR_ENTER = Transition(Amount, 0.0, 1.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
 SIDEBAR_EXIT = Transition(Amount, 1.0, 0.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
 
