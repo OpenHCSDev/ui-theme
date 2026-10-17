@@ -119,6 +119,17 @@ class MutedColour(ThemeColour):
         return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), cls.amount)
 
 
+class TurnBandColour(ThemeColour):
+    """A quiet separator surface between a transcript and its prompt."""
+
+    name = "turn-band"
+    background = True
+
+    @classmethod
+    def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
+        return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), 0.08)
+
+
 class TextStyle(Enum):
     """How an element's text is emphasised."""
 
