@@ -20,7 +20,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from math import cos, floor, tau
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
@@ -147,8 +147,12 @@ class Effect(ABC, Generic[FrameT]):
     def final(self) -> FrameT:
         """What shows when it has finished, or when animation is off."""
 
+    @property
+    def finite(self) -> bool:
+        return self.duration is not None
+
     def finished(self, elapsed: float) -> bool:
-        return self.duration is not None and elapsed >= self.duration
+        return self.finite and elapsed >= cast(float, self.duration)
 
     def cadence_time(self, now: float) -> float:
         """The shared cadence boundary containing this clock sample."""
@@ -156,7 +160,7 @@ class Effect(ABC, Generic[FrameT]):
 
     def phase_time(self, elapsed: float, now: float) -> float:
         """Repeated effects share the clock phase; finite effects start at zero."""
-        return self.cadence_time(now) if self.duration is None else elapsed
+        return elapsed if self.finite else self.cadence_time(now)
 
     @staticmethod
     def phase(elapsed: float, period: float) -> float:
@@ -292,7 +296,7 @@ class PlayedText(Effect[TextFrame]):
     def frame(self, elapsed: float) -> TextFrame:
         index = max(0, int(elapsed * self.frames_per_second))
         count = len(self.frames)
-        return self.frames[index % count if self.duration is None else min(count - 1, index)]
+        return self.frames[min(count - 1, index) if self.finite else index % count]
 
     @property
     def final(self) -> TextFrame:
@@ -302,9 +306,7 @@ class PlayedText(Effect[TextFrame]):
 class LoopingText(PlayedText):
     """The same text playback, wrapping instead of finishing; final stays static when disabled."""
 
-    @property
-    def duration(self) -> None:
-        return None
+    duration = None
 
 
 CURSOR_BLINK = Pulse(
