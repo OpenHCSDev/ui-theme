@@ -136,6 +136,13 @@ class MutedColour(BlendColour):
     amount = 0.6
 
 
+class SurfaceHoverColour(BlendColour):
+    """Raised surface behind hovered or focused project-search controls."""
+
+    name = "surface-hover"
+    amount = 0.12
+
+
 class ToneColour(BlendColour):
     """A surface a slight step off the background that sets one screen area apart.
 
