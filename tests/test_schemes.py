@@ -11,7 +11,7 @@ from ui_theme.catalog import DARK_PALETTE, LIGHT_PALETTE, SCHEMES
 from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb
 from ui_theme.scheme import (
     BackgroundColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
-    PrimaryColour, SecondaryColour, ThemeColour,
+    PrimaryColour, SecondaryColour, ThemeColour, ToneColour,
 )
 from ui_theme.wal import WalFile
 
@@ -133,7 +133,9 @@ def test_a_scheme_must_state_every_core_colour_and_no_derived_one():
         ColourScheme("x", True, {**SCHEMES[0].colours, MutedColour: Rgb(1, 1, 1)}, DARK_PALETTE)
 
 
-def test_theme_colour_names_are_declared_once():
-    assert set(ThemeColour.__registry__) == {
-        "foreground", "background", "primary", "secondary", "accent", "success", "warning",
-        "error", "surface", "panel", "boost", "muted"}
+def test_area_tones_step_off_the_background_toward_the_foreground_in_dark_and_light():
+    for scheme in (next(s for s in SCHEMES if s.dark), next(s for s in SCHEMES if not s.dark)):
+        background, foreground = scheme.rgb(BackgroundColour), scheme.rgb(ForegroundColour)
+        for tone in ToneColour.members():
+            assert tone.background and 0 < tone.amount < 0.1
+            assert scheme.rgb(tone) == background.blend(foreground, tone.amount)
