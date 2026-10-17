@@ -93,9 +93,8 @@ class AnimationClock:
         self.refresh()
 
     def refresh(self) -> None:
-        fps = max((animation.effect.frames_per_second for target, animation in tuple(self.running.items())
-                   if target.animation_visible), default=0) if self.enabled else 0
-        interval = 1 / fps if fps else None
+        interval = min((1 / animation.effect.frames_per_second for target, animation in tuple(self.running.items())
+                        if self.enabled and target.animation_visible), default=None)
         if interval != self._interval:
             if self._interval is None and interval is not None:
                 self.time = self.now()

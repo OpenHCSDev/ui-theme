@@ -286,11 +286,13 @@ class PlayedText(Effect[TextFrame]):
     def duration(self) -> float | None:  # type: ignore[override]
         return len(self.frames) / self.frames_per_second
 
-    def frame(self, elapsed: float) -> TextFrame:
-        return self.frames[self._frame_index(max(0, int(elapsed * self.frames_per_second)))]
+    def phase_time(self, elapsed: float, now: float) -> float:
+        return elapsed
 
-    def _frame_index(self, index: int) -> int:
-        return min(len(self.frames) - 1, index)
+    def frame(self, elapsed: float) -> TextFrame:
+        index = max(0, int(elapsed * self.frames_per_second))
+        count = len(self.frames)
+        return self.frames[index % count if self.duration is None else min(count - 1, index)]
 
     @property
     def final(self) -> TextFrame:
@@ -300,15 +302,9 @@ class PlayedText(Effect[TextFrame]):
 class LoopingText(PlayedText):
     """The same text playback, wrapping instead of finishing; final stays static when disabled."""
 
-    def phase_time(self, elapsed: float, now: float) -> float:
-        return elapsed
-
     @property
     def duration(self) -> None:
         return None
-
-    def _frame_index(self, index: int) -> int:
-        return index % len(self.frames)
 
 
 CURSOR_BLINK = Pulse(
