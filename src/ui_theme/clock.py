@@ -75,7 +75,7 @@ class AnimationClock:
         """Run an effect; independent effects on one target share this clock."""
         animation: Animation[FrameT] = Animation(self, effect, self.now())
         if self.enabled:
-            self.running[animation] = target  # type: ignore[index]
+            self.running[animation] = target
             self.refresh()
         return animation
 
