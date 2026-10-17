@@ -10,8 +10,8 @@ import pytest
 from ui_theme.catalog import DARK_PALETTE, LIGHT_PALETTE, SCHEMES
 from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb
 from ui_theme.scheme import (
-    BackgroundColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
-    PrimaryColour, SecondaryColour, ThemeColour, ToneColour,
+    BackgroundColour, BlendColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
+    PrimaryColour, SecondaryColour,
 )
 from ui_theme.wal import WalFile
 
@@ -107,8 +107,10 @@ def test_every_scheme_answers_every_core_and_derived_colour_in_24_bits():
     names = [scheme.name for scheme in SCHEMES]
     assert len(names) == len(set(names)) == 21
     for scheme in SCHEMES:
-        for colour in (*CoreColour.members(), MutedColour):
+        for colour in CoreColour.members():
             assert isinstance(scheme.rgb(colour), Rgb)
+        for colour in BlendColour.members():
+            assert scheme.rgb(colour) == scheme.rgb(BackgroundColour).blend(scheme.rgb(ForegroundColour), colour.amount)
         assert scheme.terminal is (DARK_PALETTE if scheme.dark else LIGHT_PALETTE)
 
 
@@ -132,10 +134,3 @@ def test_a_scheme_must_state_every_core_colour_and_no_derived_one():
     with pytest.raises(ValueError, match="muted"):
         ColourScheme("x", True, {**SCHEMES[0].colours, MutedColour: Rgb(1, 1, 1)}, DARK_PALETTE)
 
-
-def test_area_tones_step_off_the_background_toward_the_foreground_in_dark_and_light():
-    for scheme in (next(s for s in SCHEMES if s.dark), next(s for s in SCHEMES if not s.dark)):
-        background, foreground = scheme.rgb(BackgroundColour), scheme.rgb(ForegroundColour)
-        for tone in ToneColour.members():
-            assert tone.background and 0 < tone.amount < 0.1
-            assert scheme.rgb(tone) == background.blend(foreground, tone.amount)
