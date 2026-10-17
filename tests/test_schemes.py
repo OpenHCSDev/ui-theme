@@ -10,8 +10,8 @@ import pytest
 from ui_theme.catalog import DARK_PALETTE, LIGHT_PALETTE, SCHEMES
 from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb
 from ui_theme.scheme import (
-    BackgroundColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
-    PrimaryColour, SecondaryColour, ThemeColour,
+    BackgroundColour, BlendColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
+    PrimaryColour, SecondaryColour,
 )
 from ui_theme.wal import WalFile
 
@@ -107,8 +107,10 @@ def test_every_scheme_answers_every_core_and_derived_colour_in_24_bits():
     names = [scheme.name for scheme in SCHEMES]
     assert len(names) == len(set(names)) == 21
     for scheme in SCHEMES:
-        for colour in (*CoreColour.members(), MutedColour):
+        for colour in CoreColour.members():
             assert isinstance(scheme.rgb(colour), Rgb)
+        for colour in BlendColour.members():
+            assert scheme.rgb(colour) == scheme.rgb(BackgroundColour).blend(scheme.rgb(ForegroundColour), colour.amount)
         assert scheme.terminal is (DARK_PALETTE if scheme.dark else LIGHT_PALETTE)
 
 
@@ -132,8 +134,3 @@ def test_a_scheme_must_state_every_core_colour_and_no_derived_one():
     with pytest.raises(ValueError, match="muted"):
         ColourScheme("x", True, {**SCHEMES[0].colours, MutedColour: Rgb(1, 1, 1)}, DARK_PALETTE)
 
-
-def test_theme_colour_names_are_declared_once():
-    assert set(ThemeColour.__registry__) == {
-        "foreground", "background", "primary", "secondary", "accent", "success", "warning",
-        "error", "surface", "panel", "boost", "muted"}

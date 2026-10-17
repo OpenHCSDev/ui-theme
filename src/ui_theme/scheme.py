@@ -103,7 +103,20 @@ class BoostColour(LayerColour):
     name = "boost"
 
 
-class MutedColour(ThemeColour):
+class BlendColour(ThemeColour):
+    """A colour no scheme states: the background `amount` of the way to the foreground.
+
+    The same ratio steps lighter in a dark theme and darker in a light one.
+    """
+
+    amount: ClassVar[float]
+
+    @classmethod
+    def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
+        return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), cls.amount)
+
+
+class MutedColour(BlendColour):
     """Secondary text: the foreground part of the way over the background.
 
     Terminal colours cannot be blended without their palette; a terminal
@@ -111,23 +124,58 @@ class MutedColour(ThemeColour):
     """
 
     name = "muted"
-    # How far from the background to the foreground muted text sits.
-    amount: ClassVar[float] = 0.6
-
-    @classmethod
-    def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
-        return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), cls.amount)
+    amount = 0.6
 
 
-class TurnBandColour(ThemeColour):
+class ToneColour(BlendColour):
+    """A surface a slight step off the background that sets one screen area apart.
+
+    The transcript stays on the background itself; every other area steps away from it.
+    """
+
+    background = True
+
+
+class TurnBandColour(ToneColour):
     """A quiet separator surface between a transcript and its prompt."""
 
     name = "turn-band"
-    background = True
+    amount = 0.08
 
-    @classmethod
-    def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
-        return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), 0.08)
+
+class HeaderToneColour(ToneColour):
+    """The tab bar along the top."""
+
+    name = "tone-header"
+    amount = 0.06
+
+
+class SidebarToneColour(ToneColour):
+    """The channel and thread sidebars."""
+
+    name = "tone-sidebar"
+    amount = 0.035
+
+
+class AlternateRowToneColour(ToneColour):
+    """Every other row of a sidebar list, one more step off the sidebar."""
+
+    name = "tone-alternate-row"
+    amount = 0.075
+
+
+class PromptToneColour(ToneColour):
+    """The prompt area under the transcript."""
+
+    name = "tone-prompt"
+    amount = 0.04
+
+
+class FooterToneColour(ToneColour):
+    """The key bar along the bottom."""
+
+    name = "tone-footer"
+    amount = 0.06
 
 
 class TextStyle(Enum):
