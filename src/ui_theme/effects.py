@@ -155,8 +155,8 @@ class Effect(ABC, Generic[FrameT]):
         return floor(now * self.frames_per_second) / self.frames_per_second
 
     def phase_time(self, elapsed: float, now: float) -> float:
-        """Visual time, independently of the animation's finite lifetime."""
-        return elapsed
+        """Repeated effects share the clock phase; finite effects start at zero."""
+        return self.cadence_time(now) if self.duration is None else elapsed
 
     @staticmethod
     def phase(elapsed: float, period: float) -> float:
@@ -201,10 +201,6 @@ class BreathingSweep(Effect[Ribbon]):
     maximum_thickness: float
     frames_per_second: float
     duration: float | None = None
-
-    def phase_time(self, elapsed: float, now: float) -> float:
-        # Repeated indicators show one clock phase, not one phase per mount.
-        return self.cadence_time(now)
 
     def frame(self, elapsed: float) -> Ribbon:
         breath = self.oscillation(elapsed, self.breathing_period)
@@ -304,6 +300,9 @@ class PlayedText(Effect[TextFrame]):
 class LoopingText(PlayedText):
     """The same text playback, wrapping instead of finishing; final stays static when disabled."""
 
+    def phase_time(self, elapsed: float, now: float) -> float:
+        return elapsed
+
     @property
     def duration(self) -> None:
         return None
@@ -311,6 +310,10 @@ class LoopingText(PlayedText):
     def _frame_index(self, index: int) -> int:
         return index % len(self.frames)
 
+
+CURSOR_BLINK = Pulse(
+    BackgroundColour, AccentColour, minimum=0.2, maximum=1.0, period=1.0, frames_per_second=2,
+)
 
 # Single-cell activity ink; None inherits the frontend label's existing style.
 SPINNER = LoopingText(

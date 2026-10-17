@@ -69,18 +69,15 @@ class AnimationClock:
 
     def start(self, effect: Effect[FrameT], target: AnimationTarget) -> Animation[FrameT]:
         """Run `effect` on `target`, replacing what ran there."""
-        now = self.now()
-        if not self.running:
-            self.time = now
-        animation: Animation[FrameT] = Animation(self, effect, now)
+        animation: Animation[FrameT] = Animation(self, effect, self.now())
         if self.enabled:
             self.running[target] = animation  # type: ignore[assignment]
-            self._reschedule()
+            self.refresh()
         return animation
 
     def stop(self, target: AnimationTarget) -> None:
         if self.running.pop(target, None) is not None:
-            self._reschedule()
+            self.refresh()
 
     def tick(self) -> None:
         previous = self.time
@@ -93,11 +90,14 @@ class AnimationClock:
             if finished or (target.animation_visible
                     and effect.cadence_time(previous) != effect.cadence_time(now)):
                 target.repaint()
-        self._reschedule()
+        self.refresh()
 
-    def _reschedule(self) -> None:
-        interval = (1 / max(a.effect.frames_per_second for a in self.running.values())
-                    if self.running else None)
+    def refresh(self) -> None:
+        fps = max((animation.effect.frames_per_second for target, animation in tuple(self.running.items())
+                   if target.animation_visible), default=0) if self.enabled else 0
+        interval = 1 / fps if fps else None
         if interval != self._interval:
+            if self._interval is None and interval is not None:
+                self.time = self.now()
             self._interval = interval
             self.schedule(interval)
