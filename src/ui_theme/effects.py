@@ -18,6 +18,7 @@ Frames:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import cos, floor, tau
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
@@ -131,6 +132,23 @@ class TextFrame(Frame):
         return backend.paint_text(self, target)
 
 
+@dataclass(frozen=True)
+class Amount(Frame):
+    """A unitless paint amount; the frontend owns its physical rendering."""
+
+    value: float
+
+    def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> float:
+        return self.value
+
+
+class Position(Amount):
+    """Interpolate placement in the frontend's own coordinate units."""
+
+    def displacement(self, origin: float, destination: float) -> float:
+        return (origin - destination) * (1 - self.value)
+
+
 class Effect(ABC, Generic[FrameT]):
     """An animation: a frame for any time since it started."""
 
@@ -173,6 +191,29 @@ class Effect(ABC, Generic[FrameT]):
     @staticmethod
     def progress(elapsed: float, duration: float) -> float:
         return min(1.0, max(0.0, elapsed / duration))
+
+    @staticmethod
+    def ease_out(progress: float) -> float:
+        return 1 - (1 - progress) ** 2
+
+
+@dataclass(frozen=True)
+class Transition(Effect[FrameT]):
+    """One eased, finite interpolation, producing its declared frame type."""
+
+    frame_type: Callable[[float], FrameT]
+    start: float
+    end: float
+    duration: float
+    frames_per_second: float
+
+    def frame(self, elapsed: float) -> FrameT:
+        progress = self.ease_out(self.progress(elapsed, self.duration))
+        return self.frame_type(self.start + (self.end - self.start) * progress)
+
+    @property
+    def final(self) -> FrameT:
+        return self.frame_type(self.end)
 
 
 @dataclass(frozen=True)
@@ -250,8 +291,7 @@ class Fade(Effect[Mix]):
     frames_per_second: float
 
     def frame(self, elapsed: float) -> Mix:
-        progress = self.progress(elapsed, self.duration)
-        return Mix(self.start, self.end, 1 - (1 - progress) ** 2)
+        return Mix(self.start, self.end, self.ease_out(self.progress(elapsed, self.duration)))
 
     @property
     def final(self) -> Mix:
@@ -337,6 +377,13 @@ NEW_MESSAGE = Fade(AccentColour, AccentColour, duration=0.4, frames_per_second=3
 
 # Changed text rises from the background into each run's own colour.
 NEW_TEXT = Fade(BackgroundColour, ForegroundColour, duration=0.35, frames_per_second=30)
+
+# Sidebar placement and appearance share one duration, cadence and easing.
+_SIDEBAR_DURATION = 0.25
+_SIDEBAR_FPS = 60
+SIDEBAR_MOVE = Transition(Position, 0.0, 1.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
+SIDEBAR_ENTER = Transition(Amount, 0.0, 1.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
+SIDEBAR_EXIT = Transition(Amount, 1.0, 0.0, _SIDEBAR_DURATION, _SIDEBAR_FPS)
 
 # The current tab's underline when a tab is chosen.
 TAB_WIPE = Wipe(AccentColour, width=0.35, duration=0.25, frames_per_second=60)
