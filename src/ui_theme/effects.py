@@ -138,7 +138,7 @@ class Amount(Frame):
 
     value: float
 
-    def paint(self, backend: Backend[Any, Any, Any, Any], target: Any) -> float:
+    def paint(self, backend: object, target: object) -> float:
         return self.value
 
 
