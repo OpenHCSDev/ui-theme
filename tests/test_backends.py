@@ -7,10 +7,10 @@ driven by the same effects and the same clock.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ui_theme.backend import Backend, TerminalBackend
-from ui_theme.catalog import SCHEMES
+from ui_theme.catalog import SCHEMES, LIGHT_PALETTE
 from ui_theme.clock import AnimationClock
 from ui_theme.colour import AnsiColour, Rgb, TerminalPalette
 from ui_theme.depth import TrueColourDepth
@@ -135,10 +135,11 @@ def backends(scheme: ColourScheme) -> tuple[Backend, ...]:
 
 
 def test_both_backends_draw_a_scheme_through_the_same_interface():
-    cells, css = backends(ANSI_DARK)
+    scheme = replace(ANSI_DARK, terminal=ANSI_DARK.terminal.resolve(lambda: LIGHT_PALETTE))
+    cells, css = backends(scheme)
     assert cells.theme(ANSI_DARK)["primary"] == "ansi_blue"
-    assert cells.palette(ANSI_DARK.terminal)[4] == ANSI_DARK.terminal.ansi[4].hex
-    assert f"--primary:{ANSI_DARK.terminal.ansi[4].hex}" in css.theme(ANSI_DARK)
+    assert cells.palette(LIGHT_PALETTE)[4] == LIGHT_PALETTE.ansi[4].hex
+    assert f"--primary:{LIGHT_PALETTE.ansi[4].hex}" in css.theme(scheme)
     assert CssBackend(NORD).colour(PrimaryColour) == "#88c0d0"
 
 

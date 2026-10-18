@@ -3,12 +3,13 @@
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from ui_theme.catalog import DARK_PALETTE, LIGHT_PALETTE, SCHEMES
-from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb
+from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb, TerminalPaletteRequired
 from ui_theme.scheme import (
     BackgroundColour, BlendColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
     PrimaryColour, SecondaryColour,
@@ -107,16 +108,20 @@ def test_every_scheme_answers_every_core_and_derived_colour_in_24_bits():
     names = [scheme.name for scheme in SCHEMES]
     assert len(names) == len(set(names)) == 21
     for scheme in SCHEMES:
+        if scheme.from_terminal:
+            with pytest.raises(TerminalPaletteRequired):
+                scheme.rgb(ForegroundColour)
+            scheme = replace(scheme, terminal=scheme.terminal.resolve(lambda: LIGHT_PALETTE))
         for colour in CoreColour.members():
             assert isinstance(scheme.rgb(colour), Rgb)
         for colour in BlendColour.members():
             assert scheme.rgb(colour) == scheme.rgb(BackgroundColour).blend(scheme.rgb(ForegroundColour), colour.amount)
-        assert scheme.terminal is (DARK_PALETTE if scheme.dark else LIGHT_PALETTE)
 
 
 def test_terminal_colours_are_read_from_the_palette_for_backends_that_are_not_terminals():
     ansi_dark = next(scheme for scheme in SCHEMES if scheme.name == "ansi-dark")
     assert ansi_dark.from_terminal
+    ansi_dark = replace(ansi_dark, terminal=ansi_dark.terminal.resolve(lambda: DARK_PALETTE))
     assert ansi_dark.colours[PrimaryColour] is BLUE
     assert ansi_dark.rgb(PrimaryColour) == DARK_PALETTE.ansi[4]
     assert ansi_dark.colours[ForegroundColour] is TERMINAL_DEFAULT
