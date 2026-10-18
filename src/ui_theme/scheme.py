@@ -11,11 +11,14 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from metaclass_registry import AutoRegisterMeta  # type: ignore[import-untyped]
 
 from ui_theme.colour import Colour, Rgb, TerminalPalette
+
+if TYPE_CHECKING:
+    from ui_theme.backend import TerminalBackend
 
 
 class ThemeColour(metaclass=AutoRegisterMeta):
@@ -199,6 +202,10 @@ class TextStyle(Enum):
 
     NONE = "none"
     REVERSE = "reverse"
+
+    def native(self, backend: TerminalBackend[Any]) -> Any:
+        """This text emphasis as a terminal backend emits it."""
+        return backend.text_style(self)
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,7 @@ from typing import Any, Generic, TypeVar
 from ui_theme.colour import AnsiColour, Rgb, TerminalPalette
 from ui_theme.depth import ColourDepth
 from ui_theme.effects import Band, Gradient, Mix, TextFrame
-from ui_theme.scheme import ColourScheme, ThemeColour
+from ui_theme.scheme import ColourScheme, TextStyle, ThemeColour
 
 ThemeT = TypeVar("ThemeT")
 ColourT = TypeVar("ColourT")
@@ -72,3 +72,6 @@ class TerminalBackend(Generic[PaletteT]):
 
     @abstractmethod
     def terminal_default(self) -> Any: ...
+
+    @abstractmethod
+    def text_style(self, style: TextStyle) -> Any: ...
