@@ -15,6 +15,7 @@ Every other backend asks for `rgb()`, which reads them from the scheme's
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -163,14 +164,38 @@ class TerminalDefault(Colour):
 TERMINAL_DEFAULT = TerminalDefault()
 
 
+class PaletteSource(ABC):
+    """Where a scheme's terminal colours come from."""
+
+    @abstractmethod
+    def resolve(self, query: Callable[[], TerminalPalette]) -> TerminalPalette:
+        """Supply declared colours or ask the terminal that owns them."""
+
+
+class TerminalOwnedPalette(PaletteSource):
+    def resolve(self, query: Callable[[], TerminalPalette]) -> TerminalPalette:
+        return query()
+
+
+class TerminalPaletteRequired(RuntimeError):
+    """RGB rendering of terminal colours needs a palette from that terminal."""
+
+
+def require_terminal_palette() -> TerminalPalette:
+    raise TerminalPaletteRequired("Query the terminal palette before resolving its colours")
+
+
 @dataclass(frozen=True)
-class TerminalPalette:
+class TerminalPalette(PaletteSource):
     """A terminal's colours: ANSI 0–15, the default foreground and background, the cursor."""
 
     background: Rgb
     foreground: Rgb
     cursor: Rgb
     ansi: tuple[Rgb, ...]
+
+    def resolve(self, query: Callable[[], TerminalPalette]) -> TerminalPalette:
+        return self
 
     def __post_init__(self) -> None:
         if len(self.ansi) != 16:

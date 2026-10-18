@@ -433,7 +433,7 @@ SCHEMES: tuple[ColourScheme, ...] = (
         },
     ),
     ColourScheme(
-        'ansi-dark', dark=True, terminal=DARK_PALETTE,
+        'ansi-dark', dark=True,
         colours={
             ForegroundColour: TERMINAL_DEFAULT,
             BackgroundColour: TERMINAL_DEFAULT,
@@ -463,7 +463,7 @@ SCHEMES: tuple[ColourScheme, ...] = (
         },
     ),
     ColourScheme(
-        'ansi-light', dark=False, terminal=LIGHT_PALETTE,
+        'ansi-light', dark=False,
         colours={
             ForegroundColour: TERMINAL_DEFAULT,
             BackgroundColour: TERMINAL_DEFAULT,

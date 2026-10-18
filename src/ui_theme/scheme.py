@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from metaclass_registry import AutoRegisterMeta  # type: ignore[import-untyped]
 
-from ui_theme.colour import Colour, Rgb, TerminalPalette
+from ui_theme.colour import Colour, PaletteSource, Rgb, TerminalOwnedPalette, TerminalPalette, require_terminal_palette
 
 if TYPE_CHECKING:
     from ui_theme.backend import TerminalBackend
@@ -38,7 +38,7 @@ class ThemeColour(metaclass=AutoRegisterMeta):
     def rgb(cls, scheme: ColourScheme) -> Rgb:
         """This colour in 24 bits under `scheme`; a terminal colour is read from its palette."""
         return cls.resolve_rgb(lambda member: scheme.colours[member].rgb(
-            scheme.terminal, background=member.background))
+            scheme.terminal.resolve(require_terminal_palette), background=member.background))
 
     @classmethod
     def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
@@ -219,7 +219,7 @@ class ColourScheme:
     name: str
     dark: bool
     colours: Mapping[type[ThemeColour], Colour]
-    terminal: TerminalPalette
+    terminal: PaletteSource = field(default_factory=TerminalOwnedPalette)
     elements: Mapping[str, Colour | TextStyle] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
