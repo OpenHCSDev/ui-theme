@@ -42,13 +42,15 @@ class Animation(Generic[FrameT]):
     def elapsed(self) -> float:
         return max(0.0, self.clock.time - self.started)
 
+    @property
+    def finished(self) -> bool:
+        return not self.clock.enabled or self.effect.finished(self.elapsed)
+
     def frame(self) -> FrameT:
         """What the effect shows now; its final frame once finished or when animation is off."""
-        if not self.clock.enabled:
+        if self.finished:
             return self.effect.final
-        elapsed = self.elapsed
-        return (self.effect.final if self.effect.finished(elapsed)
-                else self.effect.frame(self.effect.phase_time(elapsed, self.clock.time)))
+        return self.effect.frame(self.effect.phase_time(self.elapsed, self.clock.time))
 
     def stop(self) -> None:
         self.clock.running.pop(self, None)
@@ -91,7 +93,7 @@ class AnimationClock:
         repaint: set[AnimationTarget] = set()
         for animation, target in list(self.running.items()):
             effect = animation.effect
-            finished = effect.finished(animation.elapsed)
+            finished = animation.finished
             if finished:
                 del self.running[animation]
             if finished or (target.animation_visible
