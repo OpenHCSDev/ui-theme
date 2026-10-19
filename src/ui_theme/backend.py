@@ -15,7 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
-from ui_theme.colour import AnsiColour, Rgb, TerminalPalette
+from ui_theme.colour import AnsiColour, Colour, Rgb, TerminalPalette
 from ui_theme.depth import ColourDepth
 from ui_theme.effects import Band, Gradient, Mix, TextFrame
 from ui_theme.scheme import ColourScheme, TextStyle, ThemeColour
@@ -75,3 +75,7 @@ class TerminalBackend(Generic[PaletteT]):
 
     @abstractmethod
     def text_style(self, style: TextStyle) -> Any: ...
+
+    @abstractmethod
+    def colour_variable(self, colour: Colour) -> str:
+        """Render a declared colour as this frontend's theme variable."""
