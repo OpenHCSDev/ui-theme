@@ -12,7 +12,8 @@ from ui_theme.catalog import DARK_PALETTE, LIGHT_PALETTE, SCHEMES
 from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb, TerminalPaletteRequired
 from ui_theme.scheme import (
     BackgroundColour, BlendColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
-    PrimaryColour, SecondaryColour,
+    PrimaryColour, SecondaryColour, BlockCursorBackgroundColour, BlockCursorForegroundColour,
+    ElementColour, InputSelectionBackgroundColour, ThemeTextStyle,
 )
 from ui_theme.wal import WalFile
 
@@ -129,6 +130,19 @@ def test_terminal_colours_are_read_from_the_palette_for_backends_that_are_not_te
     assert ansi_dark.rgb(BackgroundColour) == DARK_PALETTE.background
     muted = ansi_dark.rgb(MutedColour)
     assert muted == DARK_PALETTE.background.blend(DARK_PALETTE.foreground, MutedColour.amount)
+
+
+def test_element_declarations_preserve_stated_values_and_own_cursor_derivation():
+    for scheme in SCHEMES:
+        assert all(issubclass(member, (ElementColour, ThemeTextStyle)) for member in scheme.elements)
+        assert all(scheme.resolved_elements[member] is value for member, value in scheme.elements.items())
+        if BlockCursorForegroundColour not in scheme.elements:
+            assert scheme.resolved_elements[BlockCursorForegroundColour] == (
+                BlockCursorBackgroundColour.rgb(scheme).contrast_text(0xDD / 255))
+    scheme = next(scheme for scheme in SCHEMES if scheme.name == "textual-dark")
+    assert scheme.resolved_elements[BlockCursorBackgroundColour] is scheme.colours[PrimaryColour]
+    with pytest.raises(KeyError):
+        InputSelectionBackgroundColour.value(scheme)
 
 
 def test_a_scheme_must_state_every_core_colour_and_no_derived_one():
