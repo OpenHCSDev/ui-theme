@@ -50,6 +50,12 @@ class CellBackend(Backend[dict, str, list, int], TerminalBackend[tuple]):
     def terminal_default(self) -> str:
         return "default"
 
+    def text_style(self, style) -> str:
+        return style.value
+
+    def colour_variable(self, colour) -> str:
+        return colour.native(self)
+
     def _mixed(self, start: type[ThemeColour], end: type[ThemeColour], amount: float) -> str:
         if self.scheme.from_terminal:
             # Terminal colours cannot be blended; they step.

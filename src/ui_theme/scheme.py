@@ -41,6 +41,10 @@ class ThemeColour(metaclass=AutoRegisterMeta):
             scheme.terminal.resolve(require_terminal_palette), background=member.background))
 
     @classmethod
+    def variable(cls, value: Colour, backend: TerminalBackend[Any]) -> str:
+        return backend.colour_variable(value)
+
+    @classmethod
     def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
         """Resolve this declaration against the caller's already decoded palette."""
         return read(cls)
@@ -237,6 +241,10 @@ class ThemeTextStyle:
 
     name: ClassVar[str]
 
+    @classmethod
+    def variable(cls, value: TextStyle, backend: TerminalBackend[Any]) -> str:
+        return value.native(backend)
+
 
 class BlockCursorTextStyle(ThemeTextStyle):
     name = "block-cursor-text-style"
@@ -384,6 +392,12 @@ class ColourScheme:
                    if not issubclass(colour, (CoreColour, LayerColour))]
         if derived:
             raise ValueError(f"Scheme {self.name!r} states derived colours: {', '.join(derived)}")
+
+    @property
+    def resolved_colours(self) -> Mapping[type[ThemeColour], Colour]:
+        elements = self.resolved_elements
+        return {**self.colours, **{member: cast(Colour, elements[member])
+                                  for member in ElementColour.members() if member in elements}}
 
     @property
     def resolved_elements(self) -> Mapping[type[ThemeColour] | type[ThemeTextStyle], Colour | TextStyle]:
