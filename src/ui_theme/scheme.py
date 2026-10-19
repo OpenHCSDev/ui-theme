@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from metaclass_registry import AutoRegisterMeta  # type: ignore[import-untyped]
 
@@ -87,13 +87,167 @@ class WarningColour(CoreColour):
     name = "warning"
 
 
-class BlockCursorBackgroundColour(ThemeColour):
+class ElementColour(ThemeColour):
+    """A declared interface part; an unstated ordinary element has no value."""
+
+    @classmethod
+    def value(cls, scheme: ColourScheme) -> Colour:
+        return cast(Colour, scheme.elements[cls])
+
+    @classmethod
+    def rgb(cls, scheme: ColourScheme) -> Rgb:
+        return cls.value(scheme).rgb(scheme.terminal.resolve(require_terminal_palette),
+                                     background=cls.background)
+
+
+class DerivedElementColour(ElementColour):
+    """A part whose declaration supplies its value when a scheme leaves it unstated."""
+
+    @classmethod
+    def value(cls, scheme: ColourScheme) -> Colour:
+        return super().value(scheme) if cls in scheme.elements else cls.derive(scheme)
+
+    @classmethod
+    def derive(cls, scheme: ColourScheme) -> Colour:
+        raise NotImplementedError
+
+
+class BlockCursorBackgroundColour(DerivedElementColour):
     name = "block-cursor-background"
     background = True
 
+    @classmethod
+    def derive(cls, scheme: ColourScheme) -> Colour:
+        return scheme.colours[PrimaryColour]
 
-class BlockCursorForegroundColour(ThemeColour):
+
+class BlockCursorForegroundColour(DerivedElementColour):
     name = "block-cursor-foreground"
+
+    @classmethod
+    def derive(cls, scheme: ColourScheme) -> Rgb:
+        # The cursor's existing 87% ink at eight-bit colour precision.
+        return BlockCursorBackgroundColour.rgb(scheme).contrast_text(0xDD / 255)
+
+
+class FooterKeyForegroundColour(ElementColour):
+    name = "footer-key-foreground"
+
+
+class InputSelectionBackgroundColour(ElementColour):
+    name = "input-selection-background"
+    background = True
+
+
+class ButtonForegroundColour(ElementColour):
+    name = "button-color-foreground"
+
+
+class InputCursorForegroundColour(ElementColour):
+    name = "input-cursor-foreground"
+
+
+class InputCursorBackgroundColour(ElementColour):
+    name = "input-cursor-background"
+    background = True
+
+
+class BorderColour(ElementColour):
+    name = "border"
+
+
+class BlurredBorderColour(ElementColour):
+    name = "border-blurred"
+
+
+class FooterBackgroundColour(ElementColour):
+    name = "footer-background"
+    background = True
+
+
+class ForegroundMutedColour(ElementColour):
+    name = "foreground-muted"
+
+
+class FooterDescriptionForegroundColour(ElementColour):
+    name = "footer-description-foreground"
+
+
+class AnsiBackgroundColour(ElementColour):
+    name = "ansi-background"
+    background = True
+
+
+class AnsiForegroundColour(ElementColour):
+    name = "ansi-foreground"
+
+
+class InputSelectionForegroundColour(ElementColour):
+    name = "input-selection-foreground"
+
+
+class ScreenSelectionBackgroundColour(ElementColour):
+    name = "screen-selection-background"
+    background = True
+
+
+class ScreenSelectionForegroundColour(ElementColour):
+    name = "screen-selection-foreground"
+
+
+class ScrollbarColour(ElementColour):
+    name = "scrollbar"
+
+
+class ScrollbarHoverColour(ElementColour):
+    name = "scrollbar-hover"
+
+
+class ScrollbarActiveColour(ElementColour):
+    name = "scrollbar-active"
+
+
+class ScrollbarBackgroundColour(ElementColour):
+    name = "scrollbar-background"
+    background = True
+
+
+class ScrollbarCornerColour(ElementColour):
+    name = "scrollbar-corner-color"
+    background = True
+
+
+class ScrollbarBackgroundHoverColour(ElementColour):
+    name = "scrollbar-background-hover"
+    background = True
+
+
+class ScrollbarBackgroundActiveColour(ElementColour):
+    name = "scrollbar-background-active"
+    background = True
+
+
+class BlockHoverBackgroundColour(ElementColour):
+    name = "block-hover-background"
+    background = True
+
+
+class ThemeTextStyle:
+    """A declared text-emphasis part, rather than a colour."""
+
+    name: ClassVar[str]
+
+
+class BlockCursorTextStyle(ThemeTextStyle):
+    name = "block-cursor-text-style"
+
+
+class InputCursorTextStyle(ThemeTextStyle):
+    name = "input-cursor-text-style"
+
+
+class ButtonFocusTextStyle(ThemeTextStyle):
+    name = "button-focus-text-style"
 
 
 class ErrorColour(CoreColour):
@@ -220,7 +374,7 @@ class ColourScheme:
     dark: bool
     colours: Mapping[type[ThemeColour], Colour]
     terminal: PaletteSource = field(default_factory=TerminalOwnedPalette)
-    elements: Mapping[str, Colour | TextStyle] = field(default_factory=dict)
+    elements: Mapping[type[ThemeColour] | type[ThemeTextStyle], Colour | TextStyle] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         missing = [colour.name for colour in CoreColour.members() if colour not in self.colours]
@@ -230,6 +384,12 @@ class ColourScheme:
                    if not issubclass(colour, (CoreColour, LayerColour))]
         if derived:
             raise ValueError(f"Scheme {self.name!r} states derived colours: {', '.join(derived)}")
+
+    @property
+    def resolved_elements(self) -> Mapping[type[ThemeColour] | type[ThemeTextStyle], Colour | TextStyle]:
+        """Stated parts and the cursor declarations' own derivations; no generic fallback."""
+        return {**self.elements,
+                **{member: member.value(self) for member in DerivedElementColour.members()}}
 
     @property
     def from_terminal(self) -> bool:
