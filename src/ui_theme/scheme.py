@@ -15,18 +15,23 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from metaclass_registry import AutoRegisterMeta  # type: ignore[import-untyped]
 
-from ui_theme.colour import Colour, PaletteSource, Rgb, TerminalOwnedPalette, TerminalPalette, require_terminal_palette
+from ui_theme.colour import Colour, PaletteSource, Rgb, TerminalOwnedPalette, TerminalPalette, ThemeValue, require_terminal_palette
 
 if TYPE_CHECKING:
     from ui_theme.backend import TerminalBackend
 
 
-class ThemeColour(metaclass=AutoRegisterMeta):
+class ThemePart:
+    """A declared interface part owns its variable name."""
+
+    name: ClassVar[str]
+
+
+class ThemeColour(ThemePart, metaclass=AutoRegisterMeta):
     """A semantic colour; its `name` is the one every backend and scheme uses."""
 
     __registry_key__ = "name"
     __registry__: ClassVar[dict[str, type[ThemeColour]]]
-    name: ClassVar[str | None] = None
     # Drawn behind content rather than as content (decides the terminal default).
     background: ClassVar[bool] = False
 
@@ -39,10 +44,6 @@ class ThemeColour(metaclass=AutoRegisterMeta):
         """This colour in 24 bits under `scheme`; a terminal colour is read from its palette."""
         return cls.resolve_rgb(lambda member: scheme.colours[member].rgb(
             scheme.terminal.resolve(require_terminal_palette), background=member.background))
-
-    @classmethod
-    def variable(cls, value: Colour, backend: TerminalBackend[Any]) -> str:
-        return backend.colour_variable(value)
 
     @classmethod
     def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
@@ -236,14 +237,8 @@ class BlockHoverBackgroundColour(ElementColour):
     background = True
 
 
-class ThemeTextStyle:
+class ThemeTextStyle(ThemePart):
     """A declared text-emphasis part, rather than a colour."""
-
-    name: ClassVar[str]
-
-    @classmethod
-    def variable(cls, value: TextStyle, backend: TerminalBackend[Any]) -> str:
-        return value.native(backend)
 
 
 class BlockCursorTextStyle(ThemeTextStyle):
@@ -359,11 +354,14 @@ class FooterToneColour(ToneColour):
     amount = 0.06
 
 
-class TextStyle(Enum):
+class TextStyle(ThemeValue, Enum):
     """How an element's text is emphasised."""
 
     NONE = "none"
     REVERSE = "reverse"
+
+    def variable[Palette](self, backend: TerminalBackend[Palette]) -> str:
+        return backend.text_style(self)
 
     def native(self, backend: TerminalBackend[Any]) -> Any:
         """This text emphasis as a terminal backend emits it."""
@@ -382,7 +380,7 @@ class ColourScheme:
     dark: bool
     colours: Mapping[type[ThemeColour], Colour]
     terminal: PaletteSource = field(default_factory=TerminalOwnedPalette)
-    elements: Mapping[type[ThemeColour] | type[ThemeTextStyle], Colour | TextStyle] = field(default_factory=dict)
+    elements: Mapping[type[ThemePart], ThemeValue] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         missing = [colour.name for colour in CoreColour.members() if colour not in self.colours]
@@ -400,7 +398,7 @@ class ColourScheme:
                                   for member in ElementColour.members() if member in elements}}
 
     @property
-    def resolved_elements(self) -> Mapping[type[ThemeColour] | type[ThemeTextStyle], Colour | TextStyle]:
+    def resolved_elements(self) -> Mapping[type[ThemePart], ThemeValue]:
         """Stated parts and the cursor declarations' own derivations; no generic fallback."""
         return {**self.elements,
                 **{member: member.value(self) for member in DerivedElementColour.members()}}

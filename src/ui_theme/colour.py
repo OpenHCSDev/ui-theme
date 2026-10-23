@@ -23,12 +23,23 @@ if TYPE_CHECKING:
     from ui_theme.backend import TerminalBackend
 
 
-class Colour(ABC):
+class ThemeValue:
+    """A declared theme value knows how a backend writes its CSS variable."""
+
+    @abstractmethod
+    def variable[Palette](self, backend: TerminalBackend[Palette]) -> str:
+        """Write this value through the terminal backend that owns its format."""
+
+
+class Colour(ThemeValue, ABC):
     """A colour a scheme states."""
 
     # True for colours the terminal supplies: they cannot be blended without
     # reading them from a palette.
     from_terminal: ClassVar[bool] = False
+
+    def variable[Palette](self, backend: TerminalBackend[Palette]) -> str:
+        return backend.colour_variable(self)
 
     @abstractmethod
     def rgb(self, palette: TerminalPalette, *, background: bool) -> Rgb:
