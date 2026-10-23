@@ -25,14 +25,20 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
-    AccentColour, PrimaryColour,
-    BackgroundColour, ColourScheme, ForegroundColour, MutedColour, SecondaryColour, ThemeColour,
+    AccentColour,
+    BackgroundColour,
+    ColourScheme,
+    ForegroundColour,
+    MutedColour,
+    PrimaryColour,
+    SecondaryColour,
+    ThemeColour,
 )
 
 if TYPE_CHECKING:
     from ui_theme.backend import Backend
 
-FrameT = TypeVar("FrameT", bound="Frame")
+FrameT = TypeVar("FrameT", bound="Frame", covariant=True)
 
 
 class Frame(ABC):
