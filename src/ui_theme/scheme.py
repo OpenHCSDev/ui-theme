@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
+from typing import TYPE_CHECKING, ClassVar, Self, cast
 
 from metaclass_registry import AutoRegisterMeta  # type: ignore[import-untyped]
 
@@ -369,10 +369,6 @@ class TextStyle(ThemeValue, Enum):
     REVERSE = "reverse"
 
     def variable[Palette](self, backend: TerminalBackend[Palette]) -> str:
-        return backend.text_style(self)
-
-    def native(self, backend: TerminalBackend[Any]) -> Any:
-        """This text emphasis as a terminal backend emits it."""
         return backend.text_style(self)
 
 
