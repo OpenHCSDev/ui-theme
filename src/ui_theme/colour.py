@@ -29,6 +29,7 @@ class ThemeValue:
     @abstractmethod
     def variable[Palette](self, backend: TerminalBackend[Palette]) -> str:
         """Write this value through the terminal backend that owns its format."""
+        raise NotImplementedError
 
 
 class Colour(ThemeValue, ABC):
