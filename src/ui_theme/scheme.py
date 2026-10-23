@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 from metaclass_registry import AutoRegisterMeta  # type: ignore[import-untyped]
 
@@ -36,7 +36,7 @@ class ThemeColour(ThemePart, metaclass=AutoRegisterMeta):
     background: ClassVar[bool] = False
 
     @classmethod
-    def members(cls) -> tuple[type[ThemeColour], ...]:
+    def members(cls) -> tuple[type[Self], ...]:
         return tuple(member for member in ThemeColour.__registry__.values() if issubclass(member, cls))
 
     @classmethod

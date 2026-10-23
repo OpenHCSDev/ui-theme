@@ -32,7 +32,7 @@ from ui_theme.scheme import (
 if TYPE_CHECKING:
     from ui_theme.backend import Backend
 
-FrameT = TypeVar("FrameT", bound="Frame")
+FrameT = TypeVar("FrameT", bound="Frame", covariant=True)
 
 
 class Frame(ABC):

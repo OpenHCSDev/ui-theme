@@ -16,7 +16,7 @@ from typing import Generic, Protocol, TypeVar
 
 from ui_theme.effects import Effect, Frame
 
-FrameT = TypeVar("FrameT", bound=Frame)
+FrameT = TypeVar("FrameT", bound=Frame, covariant=True)
 
 
 class AnimationTarget(Protocol):
@@ -30,7 +30,7 @@ class AnimationTarget(Protocol):
         """Ask the frontend to paint it again (it reads its frame when it paints)."""
 
 
-@dataclass(eq=False)
+@dataclass(frozen=True, eq=False)
 class Animation(Generic[FrameT]):
     """One effect's lifetime; the clock owns its target association and cadence."""
 
