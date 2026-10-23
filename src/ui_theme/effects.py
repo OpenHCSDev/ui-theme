@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import cos, floor, tau
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from ui_theme.colour import Rgb
 from ui_theme.scheme import (
@@ -169,7 +169,11 @@ class Effect(ABC, Generic[FrameT]):
         return self.duration is not None
 
     def finished(self, elapsed: float) -> bool:
-        return self.finite and elapsed >= cast(float, self.duration)
+        return self.remaining(elapsed) == 0.0
+
+    def remaining(self, elapsed: float) -> float | None:
+        """Seconds until it finishes; None runs until stopped."""
+        return None if self.duration is None else max(0.0, self.duration - elapsed)
 
     def cadence_time(self, now: float) -> float:
         """The shared cadence boundary containing this clock sample."""

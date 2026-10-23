@@ -2,7 +2,8 @@
 
 Paint derives from one clock-owned instant: a target reads `animation.frame()`
 without sampling wall time or holding a frame counter. A backend gives the
-clock one timer (`schedule`). It ticks at the fastest running effect's rate,
+clock one timer (`schedule`). It ticks at the fastest visible effect's rate
+(a hidden effect asks only for the tick at its finish),
 repaints visible targets together when their shared cadence boundary changes,
 gives each finished effect one last paint and stops ticking when nothing runs.
 """
@@ -56,6 +57,12 @@ class Animation(Generic[FrameT]):
         self.clock.running.pop(self, None)
         self.clock.refresh()
 
+    def interval(self, target: AnimationTarget) -> float | None:
+        """When it next needs a tick: its cadence while seen, only its finish while hidden."""
+        if target.animation_visible:
+            return 1 / self.effect.frames_per_second
+        return self.effect.remaining(self.elapsed)
+
 
 class AnimationClock:
     """Runs every animation's cadence from one timer."""
@@ -104,8 +111,8 @@ class AnimationClock:
         self.refresh()
 
     def refresh(self) -> None:
-        interval = min((1 / animation.effect.frames_per_second for animation, target in tuple(self.running.items())
-                        if self.enabled and target.animation_visible), default=None)
+        intervals = (animation.interval(target) for animation, target in tuple(self.running.items()))
+        interval = min((seconds for seconds in intervals if seconds is not None and self.enabled), default=None)
         if interval != self._interval:
             if self._interval is None and interval is not None:
                 self.time = self.now()
