@@ -15,7 +15,15 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 from metaclass_registry import AutoRegisterMeta  # type: ignore[import-untyped]
 
-from ui_theme.colour import Colour, PaletteSource, Rgb, TerminalOwnedPalette, TerminalPalette, ThemeValue, require_terminal_palette
+from ui_theme.colour import (
+    Colour,
+    PaletteSource,
+    Rgb,
+    TerminalOwnedPalette,
+    TerminalPalette,
+    ThemeValue,
+    require_terminal_palette,
+)
 
 if TYPE_CHECKING:
     from ui_theme.backend import TerminalBackend
