@@ -293,8 +293,21 @@ class Pulse(Effect[Mix]):
         return Mix(self.start, self.end, self.maximum)
 
 
+class TextFade(Effect[Mix]):
+    """An effect text rises through: it says which theme colour its frames begin at.
+
+    A painter that draws text on its own background re-roots a background-origin
+    frame in that background, so the text rises out of the surface it sits on
+    rather than out of the theme's. Everything else about it is `Effect`: one
+    frame per elapsed time, and `at` for an effect that plays row after row.
+    """
+
+    start: type[ThemeColour]
+    """The theme colour its frames begin at."""
+
+
 @dataclass(frozen=True)
-class Fade(Effect[Mix]):
+class Fade(TextFade):
     """From one theme colour to another, easing out, over `duration` seconds."""
 
     start: type[ThemeColour]
