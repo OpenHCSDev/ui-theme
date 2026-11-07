@@ -153,3 +153,13 @@ def test_a_scheme_must_state_every_core_colour_and_no_derived_one():
     with pytest.raises(ValueError, match="muted"):
         ColourScheme("x", True, {**SCHEMES[0].colours, MutedColour: Rgb(1, 1, 1)}, DARK_PALETTE)
 
+
+
+def test_an_effect_shows_every_row_one_frame_unless_it_says_otherwise():
+    """A painter passes the row it is drawing and never asks which kind of effect it holds."""
+    from ui_theme.effects import NEW_TEXT
+
+    early = NEW_TEXT.duration / 2
+    assert NEW_TEXT.at(early, 0.0) == NEW_TEXT.frame(early)
+    assert NEW_TEXT.at(early, 1.0) == NEW_TEXT.frame(early)
+    assert NEW_TEXT.at(NEW_TEXT.duration, 1.0) == NEW_TEXT.final
