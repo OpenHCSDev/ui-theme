@@ -163,3 +163,20 @@ def test_an_effect_shows_every_row_one_frame_unless_it_says_otherwise():
     assert NEW_TEXT.at(early, 0.0) == NEW_TEXT.frame(early)
     assert NEW_TEXT.at(early, 1.0) == NEW_TEXT.frame(early)
     assert NEW_TEXT.at(NEW_TEXT.duration, 1.0) == NEW_TEXT.final
+
+
+def test_a_rows_frame_keeps_the_phase_time_and_the_finished_answer():
+    """One body for both, so a row cannot lose what a continuous effect reads from the clock."""
+    from ui_theme.clock import AnimationClock
+    from ui_theme.effects import CURSOR_BLINK, NEW_TEXT
+
+    class Target:
+        animation_visible = True
+
+    clock = AnimationClock(lambda _when: None)
+    target = Target()
+    blink = clock.start(CURSOR_BLINK, target)
+    assert blink.at(0.0) == blink.frame(), "a continuous effect reads the same phase for any row"
+    assert blink.at(1.0) == blink.frame()
+    text = clock.start(NEW_TEXT, target)
+    assert text.at(0.37) == text.frame(), "a plain fade ignores the row"
