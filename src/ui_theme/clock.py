@@ -49,9 +49,18 @@ class Animation(Generic[FrameT]):
 
     def frame(self) -> FrameT:
         """What the effect shows now; its final frame once finished or when animation is off."""
+        return self.at(0.0)
+
+    def at(self, position: float) -> FrameT:
+        """What the effect shows now for a row `position` of the way through its target.
+
+        One body, so a row cannot lose the phase time a continuous effect reads from the
+        clock, nor the finished and animation-off answers. An effect that treats its rows
+        alike ignores the position (Effect.at).
+        """
         if self.finished:
             return self.effect.final
-        return self.effect.frame(self.effect.phase_time(self.elapsed, self.clock.time))
+        return self.effect.at(self.effect.phase_time(self.elapsed, self.clock.time), position)
 
     def stop(self) -> None:
         self.clock.running.pop(self, None)
