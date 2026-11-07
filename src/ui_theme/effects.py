@@ -159,6 +159,15 @@ class Effect(ABC, Generic[FrameT]):
     @abstractmethod
     def frame(self, elapsed: float) -> FrameT: ...
 
+    def at(self, elapsed: float, position: float) -> FrameT:
+        """The frame for a row `position` of the way through the thing being animated.
+
+        An effect that treats its rows alike shows them one frame, so position changes
+        nothing here; one that plays row after row says so by overriding this. A painter
+        passes the row it is drawing and never asks which kind of effect it holds.
+        """
+        return self.frame(elapsed)
+
     @property
     @abstractmethod
     def final(self) -> FrameT:
