@@ -327,21 +327,60 @@ class Fade(TextFade):
 
 
 @dataclass(frozen=True)
-class Wipe(Effect[Band]):
-    """A band of colour crossing a line once, leaving nothing behind."""
+class CrossingBand(Effect[Band]):
+    """A band of `width` whose leading edge travels from before a line to past its end.
+
+    Members differ only in how far through the crossing they are at a moment: once, or
+    again and again.
+    """
 
     colour: type[ThemeColour]
     width: float
-    duration: float
     frames_per_second: float
 
+    @abstractmethod
+    def travelled(self, elapsed: float) -> float:
+        """How far through a crossing this moment is, 0 to 1."""
+
     def frame(self, elapsed: float) -> Band:
-        lead = self.progress(elapsed, self.duration) * (1 + self.width)
+        lead = self.travelled(elapsed) * (1 + self.width)
         return Band(self.colour, lead - self.width, lead)
+
+
+@dataclass(frozen=True)
+class Wipe(CrossingBand):
+    """A band of colour crossing a line once, leaving nothing behind."""
+
+    duration: float
+
+    def travelled(self, elapsed: float) -> float:
+        return self.progress(elapsed, self.duration)
 
     @property
     def final(self) -> Band:
         return Band(self.colour, 1.0, 1.0)
+
+
+@dataclass(frozen=True)
+class BandSweep(CrossingBand):
+    """A band of colour crossing a line again and again, one pass per period.
+
+    What a busy indicator needs, and why it is not a Wipe: being busy has no duration to
+    progress through, so a band that reaches the end and stays there, or a bar that fills
+    as an agent works, is a claim about how far along the work is that nobody can honour.
+    This one only says that something is still happening.
+    """
+
+    period: float
+    duration: float | None = None
+
+    def travelled(self, elapsed: float) -> float:
+        return self.phase(elapsed, self.period)
+
+    @property
+    def final(self) -> Band:
+        """Animation off, or nothing happening: no band at all, and the text as it is."""
+        return Band(self.colour, 0.0, 0.0)
 
 
 @dataclass(frozen=True)
@@ -383,6 +422,15 @@ SPINNER = LoopingText(
     tuple(TextFrame((((glyph, None),),)) for glyph in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
     frames_per_second=10,
 )
+
+# A working agent, shown through its own name rather than a glyph beside it. Tristan,
+# 2026-11-08: "replace the spinner with a colour/bold wave through the letters of the
+# thread or channel name". The spinner cost a cell of every row's width to say something
+# the row's own letters can say, and at eight characters of visible name on a phone that
+# cell is expensive. A third of the name's width keeps the wave readable on a short name
+# without washing a long one; the period is slower than the spinner's 10fps flicker,
+# which read as urgency rather than as work.
+NAME_WAVE = BandSweep(AccentColour, width=0.34, period=1.4, frames_per_second=20)
 
 # The busy indicator while an agent works.
 ACTIVITY_SWEEP = BreathingSweep(
