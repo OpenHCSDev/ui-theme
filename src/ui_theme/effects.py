@@ -407,20 +407,8 @@ class PlayedText(Effect[TextFrame]):
         return self.frames[-1]
 
 
-class LoopingText(PlayedText):
-    """The same text playback, wrapping instead of finishing; final stays static when disabled."""
-
-    duration = None
-
-
 CURSOR_BLINK = Pulse(
     BackgroundColour, AccentColour, minimum=0.2, maximum=1.0, period=1.0, frames_per_second=2,
-)
-
-# Single-cell activity ink; None inherits the frontend label's existing style.
-SPINNER = LoopingText(
-    tuple(TextFrame((((glyph, None),),)) for glyph in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
-    frames_per_second=10,
 )
 
 # A working agent, shown through its own name rather than a glyph beside it. Tristan,
