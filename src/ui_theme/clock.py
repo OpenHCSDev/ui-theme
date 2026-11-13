@@ -107,20 +107,32 @@ class AnimationClock:
         previous = self.time
         now = self.time = self.now()
         repaint: set[AnimationTarget] = set()
+        visible: dict[AnimationTarget, bool] = {}
         for animation, target in list(self.running.items()):
             effect = animation.effect
             finished = animation.finished
             if finished:
                 del self.running[animation]
-            if finished or (target.animation_visible
+            if target not in visible:
+                visible[target] = target.animation_visible
+            if finished or (visible[target]
                     and effect.cadence_time(previous) != effect.cadence_time(now)):
                 repaint.add(target)
         for target in repaint:
             target.repaint()
-        self.refresh()
+        self._refresh(visible)
 
     def refresh(self) -> None:
-        intervals = (animation.interval(target) for animation, target in tuple(self.running.items()))
+        self._refresh({})
+
+    def _refresh(self, visible: dict[AnimationTarget, bool]) -> None:
+        def _interval(animation: Animation[Frame], target: AnimationTarget) -> float | None:
+            if target not in visible:
+                visible[target] = target.animation_visible
+            if visible[target]:
+                return 1 / animation.effect.frames_per_second
+            return animation.effect.remaining(animation.elapsed)
+        intervals = (_interval(a, t) for a, t in tuple(self.running.items()))
         interval = min((seconds for seconds in intervals if seconds is not None and self.enabled), default=None)
         if interval != self._interval:
             if self._interval is None and interval is not None:
