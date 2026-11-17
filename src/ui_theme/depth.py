@@ -7,9 +7,18 @@ sequences, so the depth cannot change while an app runs.
 
 from __future__ import annotations
 
-import curses
 from collections.abc import Mapping
 from typing import ClassVar
+
+try:
+    import curses
+except ModuleNotFoundError:
+    # Python-for-Android and some embedded builds ship without `_curses`; a Qt or
+    # non-terminal frontend never calls this path anyway, so the module import
+    # must not fail just because terminfo is unavailable. The `of_terminal`
+    # terminfo branch is skipped when `curses` is `None`, and the TERM suffix
+    # heuristic answers.
+    curses = None  # type: ignore[assignment]
 
 
 class ColourDepth:
@@ -23,6 +32,9 @@ class ColourDepth:
         term = environment.get("TERM", "")
         if not term or term in ("dumb", "unknown"):
             return Ansi16Depth
+        if curses is None:
+            # No terminfo available: fall through to the TERM suffix heuristic.
+            return Palette256Depth if term.endswith("256color") else Ansi16Depth
         try:
             curses.setupterm(term, -1)
         except curses.error:
