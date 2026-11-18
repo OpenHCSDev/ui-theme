@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Callable, Mapping
+from functools import cached_property
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Self, cast
@@ -50,7 +51,13 @@ class ThemeColour(ThemePart, metaclass=AutoRegisterMeta):
 
     @classmethod
     def rgb(cls, scheme: ColourScheme) -> Rgb:
-        """This colour in 24 bits under `scheme`; a terminal colour is read from its palette."""
+        """This colour in 24 bits under `scheme`, which keeps what it resolved."""
+        return scheme.rgb(cls)
+
+    @classmethod
+    def resolved_in(cls, scheme: ColourScheme) -> Rgb:
+        """This colour resolved afresh: a terminal colour is read from its palette, a blend
+        searched for its tier."""
         return cls.resolve_rgb(lambda member: scheme.colours[member].rgb(
             scheme.terminal.resolve(require_terminal_palette), background=member.background))
 
@@ -521,7 +528,21 @@ class ColourScheme:
         return self.colours[BackgroundColour].from_terminal
 
     def rgb(self, colour: type[ThemeColour]) -> Rgb:
-        return colour.rgb(self)
+        """`colour` under this scheme, resolved once: a scheme's colours are fixed, and resolving
+        a blend searches for its tier (9,089 resolutions in one Qt scroll session, 2026-11-18).
+        A scheme drawn in the terminal's own palette is read afresh, as the palette may arrive
+        after the scheme does."""
+        if self.from_terminal:
+            return colour.resolved_in(self)
+        kept = self.resolved_rgb
+        if colour not in kept:
+            kept[colour] = colour.resolved_in(self)
+        return kept[colour]
+
+    @cached_property
+    def resolved_rgb(self) -> dict[type[ThemeColour], Rgb]:
+        """The colours resolved so far under this scheme."""
+        return {}
 
 
 def scheme_of_palette(name: str, palette: TerminalPalette) -> ColourScheme:
