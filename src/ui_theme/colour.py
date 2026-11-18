@@ -91,6 +91,18 @@ class Rgb(Colour):
         return (299 * self.red + 587 * self.green + 114 * self.blue) / 255_000
 
     @property
+    def lightness(self) -> float:
+        """CIELAB lightness L*, 0 for black and 100 for white: equal differences in it look
+        equally far apart, which equal differences in RGB do not."""
+        luminance = self.luminance
+        return 116 * luminance ** (1 / 3) - 16 if luminance > 216 / 24389 else 24389 / 27 * luminance
+
+    def contrast(self, other: Rgb) -> float:
+        """The WCAG contrast ratio between this colour and `other`, from 1 (none) to 21."""
+        lighter, darker = sorted((self.luminance, other.luminance), reverse=True)
+        return (lighter + 0.05) / (darker + 0.05)
+
+    @property
     def inverse(self) -> Rgb:
         return Rgb(255 - self.red, 255 - self.green, 255 - self.blue, self.alpha)
 
