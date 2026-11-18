@@ -69,7 +69,7 @@ class Animation(Generic[FrameT]):
     def interval(self, target: AnimationTarget) -> float | None:
         """When it next needs a tick: its cadence while seen, only its finish while hidden."""
         if target.animation_visible:
-            return 1 / self.effect.frames_per_second
+            return self.effect.cadence.interval(self.clock.frame_interval)
         return self.effect.remaining(self.elapsed)
 
 
@@ -77,10 +77,13 @@ class AnimationClock:
     """Runs every animation's cadence from one timer."""
 
     def __init__(self, schedule: Callable[[float | None], None],
-                 now: Callable[[], float] = monotonic, *, enabled: bool = True) -> None:
+                 now: Callable[[], float] = monotonic, *, enabled: bool = True,
+                 frame_interval: float = 1 / 60) -> None:
         # `schedule(interval)` asks the backend to call `tick` every `interval`
         # seconds, or to stop calling it when interval is None.
         self.schedule = schedule
+        # How often the medium shows a frame; motion ticks at it (`DisplayRate`).
+        self._frame_interval = frame_interval
         self.now = now
         # One paint instant. Painting never samples wall time; ticks
         # advance this instant and invalidate the due targets together.
@@ -88,6 +91,17 @@ class AnimationClock:
         self.enabled = enabled
         self.running: dict[Animation[Frame], AnimationTarget] = {}
         self._interval: float | None = None
+
+    @property
+    def frame_interval(self) -> float:
+        return self._frame_interval
+
+    @frame_interval.setter
+    def frame_interval(self, seconds: float) -> None:
+        """The medium changed how often it shows a frame (another screen, a new refresh rate):
+        running motion ticks at the new interval from now on."""
+        self._frame_interval = seconds
+        self.refresh()
 
     def start(self, effect: Effect[FrameT], target: AnimationTarget) -> Animation[FrameT]:
         """Run an effect; independent effects on one target share this clock."""
@@ -130,7 +144,7 @@ class AnimationClock:
             if target not in visible:
                 visible[target] = target.animation_visible
             if visible[target]:
-                return 1 / animation.effect.frames_per_second
+                return animation.effect.cadence.interval(self._frame_interval)
             return animation.effect.remaining(animation.elapsed)
         intervals = (_interval(a, t) for a, t in tuple(self.running.items()))
         interval = min((seconds for seconds in intervals if seconds is not None and self.enabled), default=None)
