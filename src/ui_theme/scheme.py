@@ -385,6 +385,14 @@ class TurnBandColour(ToneColour):
     over = (PromptToneColour,)
 
 
+class InputToneColour(ToneColour):
+    """The field a reader types into: one tier off the prompt area and the band of delivery and
+    queue lines above it, so the box to type in is never the same surface as either."""
+
+    name = "tone-input"
+    over = (PromptToneColour, TurnBandColour)
+
+
 class FloatToneColour(ToneColour):
     """A panel floating over the screen (a menu, a notice): one tier off the page, sidebars
     and prompt it opens over, so it reads as lifted off them."""
