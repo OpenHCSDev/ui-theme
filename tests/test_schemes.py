@@ -13,7 +13,7 @@ from ui_theme.colour import BLUE, TERMINAL_DEFAULT, Rgb, TerminalPaletteRequired
 from ui_theme.scheme import (
     BackgroundColour, BlendColour, ColourScheme, CoreColour, ErrorColour, ForegroundColour, MutedColour,
     PrimaryColour, SecondaryColour, BlockCursorBackgroundColour, BlockCursorForegroundColour,
-    ElementColour, InputSelectionBackgroundColour, ThemeTextStyle,
+    ElementColour, InputSelectionBackgroundColour, RuleColour, ThemeTextStyle, TIER_GAP, ToneColour,
 )
 from ui_theme.wal import WalFile
 
@@ -115,8 +115,10 @@ def test_every_scheme_answers_every_core_and_derived_colour_in_24_bits():
             scheme = replace(scheme, terminal=scheme.terminal.resolve(lambda: LIGHT_PALETTE))
         for colour in CoreColour.members():
             assert isinstance(scheme.rgb(colour), Rgb)
+        background, foreground = scheme.rgb(BackgroundColour), scheme.rgb(ForegroundColour)
         for colour in BlendColour.members():
-            assert scheme.rgb(colour) == scheme.rgb(BackgroundColour).blend(scheme.rgb(ForegroundColour), colour.amount)
+            assert scheme.rgb(colour) == background.blend(
+                foreground, colour.blend_amount(background, foreground, scheme.rgb))
 
 
 def test_terminal_colours_are_read_from_the_palette_for_backends_that_are_not_terminals():
@@ -129,7 +131,8 @@ def test_terminal_colours_are_read_from_the_palette_for_backends_that_are_not_te
     assert ansi_dark.rgb(ForegroundColour) == DARK_PALETTE.foreground
     assert ansi_dark.rgb(BackgroundColour) == DARK_PALETTE.background
     muted = ansi_dark.rgb(MutedColour)
-    assert muted == DARK_PALETTE.background.blend(DARK_PALETTE.foreground, MutedColour.amount)
+    assert muted == DARK_PALETTE.background.blend(DARK_PALETTE.foreground, MutedColour.blend_amount(
+        DARK_PALETTE.background, DARK_PALETTE.foreground, ansi_dark.rgb))
 
 
 def test_element_declarations_preserve_stated_values_and_own_cursor_derivation():
@@ -143,6 +146,44 @@ def test_element_declarations_preserve_stated_values_and_own_cursor_derivation()
     assert scheme.resolved_elements[BlockCursorBackgroundColour] is scheme.colours[PrimaryColour]
     with pytest.raises(KeyError):
         InputSelectionBackgroundColour.value(scheme)
+
+
+def every_scheme_in_24_bits():
+    for scheme in SCHEMES:
+        if scheme.from_terminal:
+            palette = DARK_PALETTE if scheme.dark else LIGHT_PALETTE
+            scheme = replace(scheme, terminal=scheme.terminal.resolve(lambda: palette))
+        yield scheme
+
+
+@pytest.mark.parametrize("scheme", list(every_scheme_in_24_bits()), ids=lambda scheme: scheme.name)
+def test_every_area_tone_reads_as_its_own_surface(scheme):
+    """Areas that touch differ by a tier of lightness in every scheme, however close its
+    foreground is to its background; a fixed share of the way would shrink to nothing."""
+    background = scheme.rgb(BackgroundColour)
+    for tone in ToneColour.members():
+        colour = scheme.rgb(tone)
+        assert abs(colour.lightness - background.lightness) >= TIER_GAP, tone.name
+        for surface in tone.over:
+            assert abs(colour.lightness - scheme.rgb(surface).lightness) >= TIER_GAP, (tone.name, surface.name)
+
+
+@pytest.mark.parametrize("scheme", list(every_scheme_in_24_bits()), ids=lambda scheme: scheme.name)
+def test_muted_text_and_rules_read_on_every_resting_surface_as_far_as_the_foreground_does(scheme):
+    foreground = scheme.rgb(ForegroundColour)
+    for text in (MutedColour, RuleColour):
+        colour = scheme.rgb(text)
+        for surface in text.resting_surfaces():
+            under = scheme.rgb(surface)
+            assert colour.contrast(under) >= min(text.minimum_contrast, foreground.contrast(under)), (
+                text.name, surface.name)
+
+
+def test_lightness_and_contrast_follow_cielab_and_wcag():
+    black, white = Rgb.parse("#000000"), Rgb.parse("#ffffff")
+    assert black.lightness == 0 and round(white.lightness, 6) == 100
+    assert round(black.contrast(white), 6) == 21 and white.contrast(white) == 1
+    assert round(Rgb.parse("#777777").lightness, 1) == 50.0
 
 
 def test_a_scheme_must_state_every_core_colour_and_no_derived_one():

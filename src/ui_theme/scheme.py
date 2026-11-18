@@ -8,6 +8,7 @@ does not, each backend lays out its own surfaces.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
@@ -281,19 +282,176 @@ class BoostColour(LayerColour):
 
 
 class BlendColour(ThemeColour):
-    """A colour no scheme states: the background `amount` of the way to the foreground.
+    """A colour no scheme states: a point on the way from the background to the foreground.
 
-    The same ratio steps lighter in a dark theme and darker in a light one.
+    Each member answers how far along the way it sits, so the same declaration steps
+    lighter in a dark theme and darker in a light one. Members state what they must
+    look like (a lightness step, a readable contrast), not a share of the way: a fixed
+    share shrinks to nothing in a scheme whose foreground is close to its background.
     """
-
-    amount: ClassVar[float]
 
     @classmethod
     def resolve_rgb(cls, read: Callable[[type[ThemeColour]], Rgb]) -> Rgb:
-        return BackgroundColour.resolve_rgb(read).blend(ForegroundColour.resolve_rgb(read), cls.amount)
+        background, foreground = BackgroundColour.resolve_rgb(read), ForegroundColour.resolve_rgb(read)
+        return background.blend(foreground, cls.blend_amount(background, foreground, read))
+
+    @classmethod
+    @abstractmethod
+    def blend_amount(cls, background: Rgb, foreground: Rgb, read: Callable[[type[ThemeColour]], Rgb]) -> float:
+        """How far from `background` toward `foreground` this colour sits, 0 to 1."""
+
+    @staticmethod
+    def first_amount(background: Rgb, foreground: Rgb, reaches: Callable[[Rgb], bool], least: float = 0.0) -> float:
+        """The smallest amount from `least` up whose blend `reaches` its target; the
+        foreground itself (1) when no blend does. `reaches` holds more as the amount grows."""
+        if reaches(background.blend(foreground, least)):
+            return least
+        if not reaches(foreground):
+            return 1.0
+        low, high = least, 1.0
+        for _ in range(24):
+            middle = (low + high) / 2
+            low, high = (low, middle) if reaches(background.blend(foreground, middle)) else (middle, high)
+        return high
 
 
-class MutedColour(BlendColour):
+# Areas that touch (the page and a sidebar, a sidebar and its alternate rows, a row and its
+# hover) differ by at least this much CIELAB lightness. A just-noticeable difference is about
+# 2 in ideal viewing. Daylight reflected off a phone's glass washes out dark tones most, which
+# is where a dark theme's surfaces sit (L* 5 to 25), so tiers keep three times that: still a
+# separate surface at a glance outdoors.
+TIER_GAP = 6.0
+
+
+class ToneColour(BlendColour):
+    """A surface a visible step off the background that sets one screen area apart.
+
+    The transcript stays on the background itself; every other area is a tier further
+    toward the foreground than the surfaces it sits on or beside (`over`): at least
+    `TIER_GAP` of CIELAB lightness past the furthest of them.
+    """
+
+    background = True
+    over: ClassVar[tuple[type[ThemeColour], ...]] = ()
+    # A state raised over its surface (hovered, focused, the open tab), not an area: the item
+    # on it is the one in focus and draws in the foreground, so secondary text is not read there.
+    raised: ClassVar[bool] = False
+
+    @classmethod
+    def blend_amount(cls, background: Rgb, foreground: Rgb, read: Callable[[type[ThemeColour]], Rgb]) -> float:
+        start = background.lightness
+        reach = max((abs(surface.resolve_rgb(read).lightness - start) + TIER_GAP for surface in cls.over),
+                    default=TIER_GAP)
+        return cls.first_amount(background, foreground, lambda colour: abs(colour.lightness - start) >= reach)
+
+
+class SidebarToneColour(ToneColour):
+    """The channel and thread sidebars, beside the page."""
+
+    name = "tone-sidebar"
+
+
+class PromptToneColour(ToneColour):
+    """The prompt area under the transcript."""
+
+    name = "tone-prompt"
+
+
+class AlternateRowToneColour(ToneColour):
+    """Every other row of a sidebar list, one tier off the sidebar."""
+
+    name = "tone-alternate-row"
+    over = (SidebarToneColour,)
+
+
+class HeaderToneColour(ToneColour):
+    """The tab bar along the top, one tier off the sidebar and the page it sits above."""
+
+    name = "tone-header"
+    over = (SidebarToneColour,)
+
+
+class FooterToneColour(ToneColour):
+    """The key bar along the bottom, one tier off the prompt it sits under."""
+
+    name = "tone-footer"
+    over = (PromptToneColour,)
+
+
+class TurnBandColour(ToneColour):
+    """A quiet separator surface between a transcript and its prompt, one tier off the prompt."""
+
+    name = "turn-band"
+    over = (PromptToneColour,)
+
+
+class FloatToneColour(ToneColour):
+    """A panel floating over the screen (a menu, a notice): one tier off the page, sidebars
+    and prompt it opens over, so it reads as lifted off them."""
+
+    name = "tone-float"
+    over = (SidebarToneColour, PromptToneColour)
+
+
+class SurfaceHoverColour(ToneColour):
+    """A hovered or focused control, raised one tier off the rows and bars it is drawn over."""
+
+    name = "surface-hover"
+    over = (AlternateRowToneColour, HeaderToneColour, FooterToneColour)
+    raised = True
+
+
+class FloatHoverToneColour(ToneColour):
+    """A hovered or focused item inside a floating panel, one tier off the panel."""
+
+    name = "tone-float-hover"
+    over = (FloatToneColour,)
+    raised = True
+
+
+class SelectedTabToneColour(ToneColour):
+    """The open tab, raised one tier off the tab bar."""
+
+    name = "tone-selected-tab"
+    over = (HeaderToneColour,)
+    raised = True
+
+
+class TextBlendColour(BlendColour):
+    """Text the foreground part of the way over the background, kept readable.
+
+    It sits at least `least` of the way, and further toward the foreground until it reads
+    at `minimum_contrast` on the background and on every area tone, as far as the foreground
+    itself reads there. A raised tone (a hover, the open tab) does not hold it back.
+    """
+
+    least: ClassVar[float]
+    minimum_contrast: ClassVar[float] = 4.5
+
+    @classmethod
+    def resting_surfaces(cls) -> tuple[type[ThemeColour], ...]:
+        """The surfaces text is read on: the page and every area tone, none of the raised ones."""
+        return (BackgroundColour, *(tone for tone in ToneColour.members() if not tone.raised))
+
+    @classmethod
+    def blend_amount(cls, background: Rgb, foreground: Rgb, read: Callable[[type[ThemeColour]], Rgb]) -> float:
+        floors = {surface: min(cls.minimum_contrast, foreground.contrast(surface))
+                  for surface in (surface.resolve_rgb(read) for surface in cls.resting_surfaces())}
+        return cls.first_amount(
+            background, foreground,
+            lambda colour: all(colour.contrast(surface) >= floor for surface, floor in floors.items()), cls.least)
+
+
+class RuleColour(TextBlendColour):
+    """A rule or divider line: as quiet as it can be while it still reads as a line on every
+    surface (WCAG's 3:1 for parts of the interface that are not text)."""
+
+    name = "rule"
+    least = 0.0
+    minimum_contrast = 3.0
+
+
+class MutedColour(TextBlendColour):
     """Secondary text: the foreground part of the way over the background.
 
     Terminal colours cannot be blended without their palette; a terminal
@@ -301,65 +459,7 @@ class MutedColour(BlendColour):
     """
 
     name = "muted"
-    amount = 0.6
-
-
-class SurfaceHoverColour(BlendColour):
-    """Raised surface behind hovered or focused project-search controls."""
-
-    name = "surface-hover"
-    amount = 0.12
-
-
-class ToneColour(BlendColour):
-    """A surface a slight step off the background that sets one screen area apart.
-
-    The transcript stays on the background itself; every other area steps away from it.
-    """
-
-    background = True
-
-
-class TurnBandColour(ToneColour):
-    """A quiet separator surface between a transcript and its prompt."""
-
-    name = "turn-band"
-    amount = 0.08
-
-
-class HeaderToneColour(ToneColour):
-    """The tab bar along the top."""
-
-    name = "tone-header"
-    amount = 0.06
-
-
-class SidebarToneColour(ToneColour):
-    """The channel and thread sidebars."""
-
-    name = "tone-sidebar"
-    amount = 0.035
-
-
-class AlternateRowToneColour(ToneColour):
-    """Every other row of a sidebar list, one more step off the sidebar."""
-
-    name = "tone-alternate-row"
-    amount = 0.075
-
-
-class PromptToneColour(ToneColour):
-    """The prompt area under the transcript."""
-
-    name = "tone-prompt"
-    amount = 0.04
-
-
-class FooterToneColour(ToneColour):
-    """The key bar along the bottom."""
-
-    name = "tone-footer"
-    amount = 0.06
+    least = 0.6
 
 
 class TextStyle(ThemeValue, Enum):
