@@ -10,14 +10,31 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 from ui_theme.backend import Backend, TerminalBackend
-from ui_theme.catalog import SCHEMES, LIGHT_PALETTE
+from ui_theme.catalog import LIGHT_PALETTE, SCHEMES
 from ui_theme.clock import AnimationClock
 from ui_theme.colour import AnsiColour, Rgb, TerminalPalette
 from ui_theme.depth import TrueColourDepth
 from ui_theme.effects import (
-    ACTIVITY_SWEEP, NEW_MESSAGE, TAB_WIPE, Band, Gradient, Mix, PlayedText, TextFrame,
+    ACTIVITY_SWEEP,
+    NEW_MESSAGE,
+    TAB_WIPE,
+    Amount,
+    Band,
+    DisplayRate,
+    FixedRate,
+    Glide,
+    Gradient,
+    Mix,
+    PlayedText,
+    TextFrame,
 )
-from ui_theme.scheme import AccentColour, ColourScheme, PrimaryColour, SecondaryColour, ThemeColour
+from ui_theme.scheme import (
+    AccentColour,
+    ColourScheme,
+    PrimaryColour,
+    SecondaryColour,
+    ThemeColour,
+)
 from ui_theme.splash import loading_splash
 
 ANSI_DARK = next(scheme for scheme in SCHEMES if scheme.name == "ansi-dark")
@@ -218,3 +235,56 @@ def test_a_text_effect_is_built_in_advance_and_played_by_both_backends():
     cells, css = backends(NORD)
     assert final.paint(cells, 40) == ["Loading history"]
     assert final.paint(css, "#splash").count("<span") == len("Loadinghistory")
+
+
+class Moved:
+    """Something a glide moves: records the amount each paint shows."""
+
+    animation_visible = True
+
+    def __init__(self) -> None:
+        self.amounts: list[float] = []
+
+    def repaint(self) -> None:
+        self.amounts.append(self.animation.frame().value)
+
+
+def test_motion_ticks_every_frame_the_medium_shows_and_a_fade_keeps_its_rate():
+    timer = Timer()
+    clock = AnimationClock(timer.intervals.append, timer, frame_interval=1 / 120)
+    glide = Glide(Amount, 0.0, 1.0, 0.25)
+    moved = Moved()
+    moved.animation = clock.start(glide, moved)
+    assert isinstance(glide.cadence, DisplayRate) and timer.intervals[-1] == 1 / 120
+    run(clock, timer, 0.25)
+    # Every one of the 120 Hz frames in its quarter second moved it, and it landed.
+    assert len(moved.amounts) >= 0.25 * 120 - 1 and moved.amounts[-1] == 1.0
+    assert moved.amounts == sorted(moved.amounts)
+    faded = Target(CellBackend(NORD), 4)
+    faded.animation = clock.start(NEW_MESSAGE.ending_at(PrimaryColour), faded)
+    assert isinstance(NEW_MESSAGE.cadence, FixedRate) and timer.intervals[-1] == 1 / NEW_MESSAGE.frames_per_second
+    run(clock, timer, 1.0)
+    assert len(faded.paints) <= NEW_MESSAGE.duration * NEW_MESSAGE.frames_per_second + 2
+
+
+def test_a_glide_is_painted_on_a_tick_that_comes_early():
+    # A display timer fires a little early or late; motion must not read an early tick as the
+    # same frame and skip it.
+    timer = Timer()
+    clock = AnimationClock(timer.intervals.append, timer, frame_interval=1 / 120)
+    moved = Moved()
+    moved.animation = clock.start(Glide(Amount, 0.0, 1.0, 0.25), moved)
+    for step in (0.0081, 0.0079, 0.0084, 0.0080):
+        timer.time += step
+        clock.tick()
+    assert len(moved.amounts) == 4
+
+
+def test_a_new_frame_interval_reschedules_running_motion():
+    timer = Timer()
+    clock = AnimationClock(timer.intervals.append, timer)
+    moved = Moved()
+    moved.animation = clock.start(Glide(Amount, 0.0, 1.0, 0.25), moved)
+    assert timer.intervals[-1] == 1 / 60
+    clock.frame_interval = 1 / 120
+    assert timer.intervals[-1] == 1 / 120

@@ -148,6 +148,53 @@ class Amount(Frame):
         return self.value
 
 
+class Cadence(ABC):
+    """How often an effect shows a new frame, given how often the medium showing it can.
+
+    A medium (a terminal, a phone's screen) shows frames at its own interval; the clock is told
+    it (`AnimationClock.frame_interval`). A fixed rate suits a colour that steps: a terminal draws
+    whole cells, and a fade read at 30 frames a second looks the same at 120. Motion is not like
+    that: a band or a scroll moved at 60 frames a second on a 120 Hz screen stands still on every
+    other frame, which a reader sees as stutter (Tristan, Pixel 8a, 2026-11-18)."""
+
+    @abstractmethod
+    def interval(self, frame_interval: float) -> float:
+        """Seconds between this effect's frames on a medium showing one every `frame_interval`."""
+
+    @abstractmethod
+    def boundary(self, now: float) -> float:
+        """The frame boundary containing the clock instant `now`: an effect is painted again
+        when this changes between two ticks."""
+
+
+@dataclass(frozen=True)
+class FixedRate(Cadence):
+    """A declared number of frames a second, whatever the medium can show."""
+
+    frames_per_second: float
+
+    def interval(self, frame_interval: float) -> float:
+        return 1 / self.frames_per_second
+
+    def boundary(self, now: float) -> float:
+        return floor(now * self.frames_per_second) / self.frames_per_second
+
+
+class DisplayRate(Cadence):
+    """Every frame the medium shows: motion."""
+
+    def interval(self, frame_interval: float) -> float:
+        return frame_interval
+
+    def boundary(self, now: float) -> float:
+        # Each tick is the medium's next frame; a timer firing a little early must not make the
+        # tick look like the same frame and skip it.
+        return now
+
+
+DISPLAY_RATE = DisplayRate()
+
+
 class Effect(ABC, Generic[FrameT]):
     """An animation: a frame for any time since it started."""
 
@@ -184,9 +231,15 @@ class Effect(ABC, Generic[FrameT]):
         """Seconds until it finishes; None runs until stopped."""
         return None if self.duration is None else max(0.0, self.duration - elapsed)
 
+    @property
+    def cadence(self) -> Cadence:
+        """How often it shows a new frame: its declared `frames_per_second`, unless it moves
+        something (`Motion`), which shows every frame the medium does."""
+        return FixedRate(self.frames_per_second)
+
     def cadence_time(self, now: float) -> float:
         """The shared cadence boundary containing this clock sample."""
-        return floor(now * self.frames_per_second) / self.frames_per_second
+        return self.cadence.boundary(now)
 
     def phase_time(self, elapsed: float, now: float) -> float:
         """Repeated effects share the clock phase; finite effects start at zero."""
@@ -210,14 +263,13 @@ class Effect(ABC, Generic[FrameT]):
 
 
 @dataclass(frozen=True)
-class Transition(Effect[FrameT]):
-    """One eased, finite interpolation, producing its declared frame type."""
+class Eased(Effect[FrameT]):
+    """One eased, finite interpolation between two values, producing its declared frame type."""
 
     frame_type: Callable[[float], FrameT]
     start: float
     end: float
     duration: float
-    frames_per_second: float
 
     def frame(self, elapsed: float) -> FrameT:
         progress = self.ease_out(self.progress(elapsed, self.duration))
@@ -226,6 +278,26 @@ class Transition(Effect[FrameT]):
     @property
     def final(self) -> FrameT:
         return self.frame_type(self.end)
+
+
+@dataclass(frozen=True)
+class Transition(Eased[FrameT]):
+    """An eased interpolation shown at a declared rate."""
+
+    frames_per_second: float
+
+
+class Motion(Effect[FrameT]):
+    """An effect that moves something on screen: shown every frame the medium shows."""
+
+    @property
+    def cadence(self) -> Cadence:
+        return DISPLAY_RATE
+
+
+@dataclass(frozen=True)
+class Glide(Motion[FrameT], Eased[FrameT]):
+    """An eased interpolation of a position: a scroll, a pane sliding."""
 
 
 @dataclass(frozen=True)
