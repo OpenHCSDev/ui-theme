@@ -66,10 +66,11 @@ class Animation(Generic[FrameT]):
         self.clock.running.pop(self, None)
         self.clock.refresh()
 
-    def interval(self, target: AnimationTarget) -> float | None:
-        """When it next needs a tick: its cadence while seen, only its finish while hidden."""
-        if target.animation_visible:
-            return self.effect.cadence.interval(self.clock.frame_interval)
+    def interval(self, visible: bool) -> float | None:
+        """When it next needs a tick: its frames on the clock's medium while seen, only its
+        finish while hidden."""
+        if visible:
+            return self.effect.shown_every(self.clock.frame_interval, self.clock.ambient_interval)
         return self.effect.remaining(self.elapsed)
 
 
@@ -91,6 +92,7 @@ class AnimationClock:
         self.enabled = enabled
         self.running: dict[Animation[Frame], AnimationTarget] = {}
         self._interval: float | None = None
+        self._ambient_interval = 0.0
 
     @property
     def frame_interval(self) -> float:
@@ -101,6 +103,19 @@ class AnimationClock:
         """The medium changed how often it shows a frame (another screen, a new refresh rate):
         running motion ticks at the new interval from now on."""
         self._frame_interval = seconds
+        self.refresh()
+
+    @property
+    def ambient_interval(self) -> float:
+        """How often the medium affords a frame of motion nobody asked for
+        (`Effect.shown_every`), in seconds; 0 where a frame costs nothing worth counting."""
+        return self._ambient_interval
+
+    @ambient_interval.setter
+    def ambient_interval(self, seconds: float) -> None:
+        """The frontend measured what showing a frame costs its thread: ambient effects
+        tick at what it affords from now on."""
+        self._ambient_interval = seconds
         self.refresh()
 
     def start(self, effect: Effect[FrameT], target: AnimationTarget) -> Animation[FrameT]:
@@ -129,12 +144,14 @@ class AnimationClock:
                 del self.running[animation]
             if target not in visible:
                 visible[target] = target.animation_visible
-            if finished or (visible[target]
-                    and effect.cadence_time(previous) != effect.cadence_time(now)):
+            if finished or (visible[target] and self.frame_began(effect, previous) != self.frame_began(effect, now)):
                 repaint.add(target)
         for target in repaint:
             target.repaint()
         self._refresh(visible)
+
+    def frame_began(self, effect: Effect[Frame], instant: float) -> float:
+        return effect.frame_began(instant, self._frame_interval, self._ambient_interval)
 
     def refresh(self) -> None:
         self._refresh({})
@@ -143,9 +160,7 @@ class AnimationClock:
         def _interval(animation: Animation[Frame], target: AnimationTarget) -> float | None:
             if target not in visible:
                 visible[target] = target.animation_visible
-            if visible[target]:
-                return animation.effect.cadence.interval(self._frame_interval)
-            return animation.effect.remaining(animation.elapsed)
+            return animation.interval(visible[target])
         intervals = (_interval(a, t) for a, t in tuple(self.running.items()))
         interval = min((seconds for seconds in intervals if seconds is not None and self.enabled), default=None)
         if interval != self._interval:

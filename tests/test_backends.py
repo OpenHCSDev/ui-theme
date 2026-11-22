@@ -16,6 +16,7 @@ from ui_theme.colour import AnsiColour, Rgb, TerminalPalette
 from ui_theme.depth import TrueColourDepth
 from ui_theme.effects import (
     ACTIVITY_SWEEP,
+    NAME_WAVE,
     NEW_MESSAGE,
     TAB_WIPE,
     Amount,
@@ -288,3 +289,31 @@ def test_a_new_frame_interval_reschedules_running_motion():
     assert timer.intervals[-1] == 1 / 60
     clock.frame_interval = 1 / 120
     assert timer.intervals[-1] == 1 / 120
+
+
+def test_ambient_motion_yields_to_what_the_medium_affords_and_the_readers_own_motion_does_not():
+    """A busy indicator runs until stopped; a fade is finite. On a medium that affords an
+    ambient frame every 0.2 s the wave shows 5 frames a second, alone or beside a fade
+    that still shows each of its own 30."""
+    timer = Timer()
+    clock = AnimationClock(timer.intervals.append, timer)
+    wave = Target(CellBackend(NORD), 20)
+    wave.animation = clock.start(NAME_WAVE, wave)
+    assert timer.intervals[-1] == 1 / NAME_WAVE.frames_per_second
+    clock.ambient_interval = 0.2
+    assert timer.intervals[-1] == 0.2
+    run(clock, timer, 2.0)
+    assert 9 <= len(wave.paints) <= 11
+    wave.paints.clear()
+    fade = Target(CellBackend(NORD), 20)
+    fade.animation = clock.start(NEW_MESSAGE.ending_at(SecondaryColour), fade)
+    assert timer.intervals[-1] == 1 / NEW_MESSAGE.frames_per_second
+    started = timer.time
+    run(clock, timer, started + 0.4)
+    assert len(fade.paints) >= 11  # the fade's 0.4 s at 30 frames a second
+    assert len(wave.paints) <= 3  # the wave beside it: still one frame every 0.2 s
+    # A medium where a frame costs nothing shows the wave at its own rate again.
+    clock.ambient_interval = 0.0
+    clock.stop(fade)
+    assert timer.intervals[-1] == 1 / NAME_WAVE.frames_per_second
+    clock.stop(wave)
