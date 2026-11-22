@@ -241,27 +241,6 @@ class Effect(ABC, Generic[FrameT]):
         """The shared cadence boundary containing this clock sample."""
         return self.cadence.boundary(now)
 
-    def shown_every(self, frame_interval: float, ambient_interval: float) -> float:
-        """Seconds between this effect's frames on a medium that shows a frame every
-        `frame_interval` and affords one of ambient motion every `ambient_interval`.
-
-        A finite effect is motion the reader caused (a fade landing, a pane sliding) and
-        keeps its cadence. One that runs until stopped is ambient: a busy indicator moves
-        for as long as an agent works, which is nearly always, and nobody waits on any one
-        of its frames. On a medium where showing a frame is dear (a phone's widget window:
-        27 ms a frame on a Pixel 8a, so 20 frames a second of a throbber was half of the
-        thread that scrolls and types, 2026-11-21) it yields to what the medium affords."""
-        interval = self.cadence.interval(frame_interval)
-        return interval if self.finite else max(interval, ambient_interval)
-
-    def frame_began(self, now: float, frame_interval: float, ambient_interval: float) -> float:
-        """When the frame showing at `now` began on that medium: the effect is painted again
-        when this changes between two ticks."""
-        every = self.shown_every(frame_interval, ambient_interval)
-        if every <= self.cadence.interval(frame_interval):
-            return self.cadence_time(now)
-        return floor(now / every) * every
-
     def phase_time(self, elapsed: float, now: float) -> float:
         """Repeated effects share the clock phase; finite effects start at zero."""
         return elapsed if self.finite else self.cadence_time(now)
